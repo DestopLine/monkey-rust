@@ -1,4 +1,5 @@
-enum TokenType {
+#[derive(Debug, PartialEq, Clone)]
+pub enum TokenType {
     Illegal,
     EOF,
 
@@ -9,7 +10,7 @@ enum TokenType {
     // Operators
     Assign,
     Plus,
-    
+
     // Delimiters
     Comma,
     Semicolon,
@@ -24,7 +25,21 @@ enum TokenType {
     Let,
 }
 
-struct Token {
-    typeof: TokenType,
-    literal: string,
+pub struct Token {
+    pub toktype: TokenType,
+    pub literal: String,
+}
+
+impl Token {
+    pub fn new(toktype: TokenType, literal: String) -> Self {
+        Self { toktype, literal }
+    }
+}
+
+pub fn lookup_ident(ident: &String) -> TokenType {
+    match ident as &str {
+        "fn" => TokenType::Function,
+        "let" => TokenType::Let,
+        _ => TokenType::Ident,
+    }
 }
