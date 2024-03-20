@@ -10,6 +10,14 @@ pub enum TokenType {
     // Operators
     Assign,
     Plus,
+    Minus,
+    Bang,
+    Asterisk,
+    Slash,
+    Lt,
+    Gt,
+    Eq,
+    NotEq,
 
     // Delimiters
     Comma,
@@ -23,6 +31,11 @@ pub enum TokenType {
     // Keywords
     Function,
     Let,
+    True,
+    False,
+    If,
+    Else,
+    Return,
 }
 
 pub struct Token {
@@ -40,6 +53,11 @@ pub fn lookup_ident(ident: &String) -> TokenType {
     match ident as &str {
         "fn" => TokenType::Function,
         "let" => TokenType::Let,
+        "true" => TokenType::True,
+        "false" => TokenType::False,
+        "if" => TokenType::If,
+        "else" => TokenType::Else,
+        "return" => TokenType::Return,
         _ => TokenType::Ident,
     }
 }

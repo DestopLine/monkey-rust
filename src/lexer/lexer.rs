@@ -53,6 +53,14 @@ impl Lexer {
         self.input[position..self.position].to_string()
     }
 
+    fn peek_char(&self) -> char {
+        if self.read_position >= self.input.len() {
+            '\0'
+        } else {
+            self.input.chars().nth(self.read_position).unwrap()
+        }
+    }
+
     fn skip_whitespace(&mut self) {
         while matches!(self.ch, ' ' | '\t' | '\n' | '\r') {
             self.read_char();
@@ -65,12 +73,36 @@ impl Lexer {
         let mut literal = self.ch.to_string();
 
         let toktype = match self.ch {
-            '=' => TokenType::Assign,
+            '=' => {
+                if self.peek_char() == '=' {
+                    literal = String::from(self.ch);
+                    self.read_char();
+                    literal.push(self.ch);
+                    TokenType::Eq
+                } else {
+                    TokenType::Assign
+                }
+            }
+            '+' => TokenType::Plus,
+            '-' => TokenType::Minus,
+            '*' => TokenType::Asterisk,
+            '/' => TokenType::Slash,
+            '!' => {
+                if self.peek_char() == '=' {
+                    literal = String::from(self.ch);
+                    self.read_char();
+                    literal.push(self.ch);
+                    TokenType::NotEq
+                } else {
+                    TokenType::Bang
+                }
+            }
             ';' => TokenType::Semicolon,
+            ',' => TokenType::Comma,
+            '<' => TokenType::Lt,
+            '>' => TokenType::Gt,
             '(' => TokenType::OpenParen,
             ')' => TokenType::CloseParen,
-            ',' => TokenType::Comma,
-            '+' => TokenType::Plus,
             '{' => TokenType::OpenBrace,
             '}' => TokenType::CloseBrace,
             '\0' => {
@@ -198,6 +230,82 @@ let result = add(five, ten);
             Token::new(TokenType::CloseParen, ")".to_string()),
             Token::new(TokenType::Semicolon, ";".to_string()),
             Token::new(TokenType::EOF, "".to_string()),
+        ];
+
+        let mut l = Lexer::new(input.to_string());
+
+        for expected in tests {
+            let tok = l.next_token();
+            assert_eq!(tok.toktype, expected.toktype);
+            assert_eq!(tok.literal, expected.literal);
+            println!("{}", tok.literal);
+        }
+    }
+
+    #[test]
+    fn more_tokens() {
+        let input = "!-/*5;
+5 < 10 > 5;
+
+if (5 < 10) {
+    return true;
+} else {
+    return false;
+}";
+        let tests = [
+            Token::new(TokenType::Bang, "!".to_string()),
+            Token::new(TokenType::Minus, "-".to_string()),
+            Token::new(TokenType::Slash, "/".to_string()),
+            Token::new(TokenType::Asterisk, "*".to_string()),
+            Token::new(TokenType::Int, "5".to_string()),
+            Token::new(TokenType::Semicolon, ";".to_string()),
+            Token::new(TokenType::Int, "5".to_string()),
+            Token::new(TokenType::Lt, "<".to_string()),
+            Token::new(TokenType::Int, "10".to_string()),
+            Token::new(TokenType::Gt, ">".to_string()),
+            Token::new(TokenType::Int, "5".to_string()),
+            Token::new(TokenType::Semicolon, ";".to_string()),
+            Token::new(TokenType::If, "if".to_string()),
+            Token::new(TokenType::OpenParen, "(".to_string()),
+            Token::new(TokenType::Int, "5".to_string()),
+            Token::new(TokenType::Lt, "<".to_string()),
+            Token::new(TokenType::Int, "10".to_string()),
+            Token::new(TokenType::CloseParen, ")".to_string()),
+            Token::new(TokenType::OpenBrace, "{".to_string()),
+            Token::new(TokenType::Return, "return".to_string()),
+            Token::new(TokenType::True, "true".to_string()),
+            Token::new(TokenType::Semicolon, ";".to_string()),
+            Token::new(TokenType::CloseBrace, "}".to_string()),
+            Token::new(TokenType::Else, "else".to_string()),
+            Token::new(TokenType::OpenBrace, "{".to_string()),
+            Token::new(TokenType::Return, "return".to_string()),
+            Token::new(TokenType::False, "false".to_string()),
+            Token::new(TokenType::Semicolon, ";".to_string()),
+            Token::new(TokenType::CloseBrace, "}".to_string()),
+        ];
+
+        let mut l = Lexer::new(input.to_string());
+
+        for expected in tests {
+            let tok = l.next_token();
+            assert_eq!(tok.toktype, expected.toktype);
+            assert_eq!(tok.literal, expected.literal);
+            println!("{}", tok.literal);
+        }
+    }
+
+    #[test]
+    fn double_char_tokens() {
+        let input = "10 == 10;\n10 != 9;";
+        let tests = [
+            Token::new(TokenType::Int, "10".to_string()),
+            Token::new(TokenType::Eq, "==".to_string()),
+            Token::new(TokenType::Int, "10".to_string()),
+            Token::new(TokenType::Semicolon, ";".to_string()),
+            Token::new(TokenType::Int, "10".to_string()),
+            Token::new(TokenType::NotEq, "!=".to_string()),
+            Token::new(TokenType::Int, "9".to_string()),
+            Token::new(TokenType::Semicolon, ";".to_string()),
         ];
 
         let mut l = Lexer::new(input.to_string());
