@@ -1,8 +1,8 @@
 use std::io::{stdin, stdout, Write};
 
 use crate::{
-    lexer::lexer::Lexer,
-    token::token::{Token, TokenType},
+    lexer::Lexer,
+    token::{Token, TokenType},
 };
 
 static PROMPT: &str = "> ";

@@ -38,7 +38,7 @@ pub enum TokenType {
     Return,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Token {
     pub toktype: TokenType,
     pub literal: String,

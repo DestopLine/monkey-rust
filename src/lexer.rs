@@ -1,4 +1,4 @@
-use crate::token::token::{lookup_ident, Token, TokenType};
+use crate::token::{lookup_ident, Token, TokenType};
 
 fn is_letter(ch: &char) -> bool {
     matches!(ch, 'a'..='z' | 'A'..='Z' | '_')
