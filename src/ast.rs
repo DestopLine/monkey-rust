@@ -7,7 +7,8 @@ pub trait Node {
 
 #[derive(Debug)]
 pub enum Statement {
-    LetStatement(LetStatement),
+    Let(LetStatement),
+    Return(ReturnStatement),
 }
 
 impl Statement {
@@ -17,7 +18,8 @@ impl Statement {
 impl Node for Statement {
     fn token_literal(&self) -> String {
         match self {
-            Self::LetStatement(node) => node.token.literal.clone()
+            Self::Let(node) => node.token.literal.clone(),
+            Self::Return(node) => node.token.literal.clone(),
         }
     }
 }
@@ -72,6 +74,18 @@ pub struct LetStatement {
 }
 
 impl Node for LetStatement {
+    fn token_literal(&self) -> String {
+        self.token.literal.clone()
+    }
+}
+
+#[derive(Debug)]
+pub struct ReturnStatement {
+    pub token: Token,
+    pub return_value: Expression,
+}
+
+impl Node for ReturnStatement {
     fn token_literal(&self) -> String {
         self.token.literal.clone()
     }

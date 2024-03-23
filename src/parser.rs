@@ -28,6 +28,7 @@ impl Parser {
     fn parse_statement(&mut self) -> Option<ast::Statement> {
         match self.curr_token.toktype {
             TokenType::Let => self.parse_let_statement(),
+            TokenType::Return => self.parse_return_statement(),
             _ => None,
         }
     }
@@ -70,10 +71,25 @@ impl Parser {
             self.next_token();
         }
 
-        Some(ast::Statement::LetStatement(ast::LetStatement {
+        Some(ast::Statement::Let(ast::LetStatement {
             token,
             name,
             value: ast::Expression::None
+        }))
+    }
+
+    fn parse_return_statement(&mut self) -> Option<ast::Statement> {
+        let token = self.curr_token.clone();
+
+        self.next_token();
+
+        while !self.curr_token_is(&TokenType::Semicolon) {
+            self.next_token();
+        }
+
+        Some(ast::Statement::Return(ast::ReturnStatement {
+            token,
+            return_value: ast::Expression::None,
         }))
     }
 
@@ -132,7 +148,7 @@ let foobar = 838383;
                 "Expected 'let', got '{}'",
                 stmt.token_literal()
             );
-            if let Statement::LetStatement(let_stmt) = stmt { 
+            if let Statement::Let(let_stmt) = stmt { 
                 assert_eq!(&let_stmt.name.value, test);
                 assert_eq!(&let_stmt.name.token_literal(), test);
             } else {
@@ -170,5 +186,30 @@ let 838383;
 
         parser.parse_program();
         check_parser_errors(&parser);
+    }
+
+    #[test]
+    fn return_statements() {
+        let input = String::from("
+return 5;
+return 10;
+return 993322;
+");
+        let lexer = Lexer::new(input);
+        let mut parser = Parser::new(lexer);
+
+        let program = parser.parse_program();
+        check_parser_errors(&parser);
+
+        let length = program.statements.len();
+        assert_eq!(length, 3, "Expected 3 statements, got {}", length);
+
+        for stmt in program.statements {
+            if let Statement::Return(return_stmt) = stmt { 
+                assert_eq!(&return_stmt.token_literal(), "return");
+            } else {
+                panic!("Expected ReturnStatement, got {:?}", stmt);
+            }
+        }
     }
 }
