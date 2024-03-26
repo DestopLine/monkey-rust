@@ -1,4 +1,4 @@
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone, Hash)]
 pub enum TokenType {
     Illegal,
     EOF,
@@ -11,13 +11,13 @@ pub enum TokenType {
     Assign,
     Plus,
     Minus,
-    Bang,
     Asterisk,
     Slash,
     Lt,
     Gt,
     Eq,
     NotEq,
+    Bang,
 
     // Delimiters
     Comma,

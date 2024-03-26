@@ -1,5 +1,26 @@
-use crate::{lexer::Lexer, token::{Token, TokenType}, ast};
+use crate::{ast, lexer::Lexer, token::{Token, TokenType}};
 // use crate::{ast::{Program, Statement}, lexer::Lexer, token::{Token, TokenType}};
+
+#[derive(Debug, PartialEq, PartialOrd)]
+enum Precedence {
+    Lowest,
+    Equals,
+    LessGreater,
+    Sum,
+    Product,
+    Prefix,
+    Call,
+}
+
+fn get_precedence(toktype: &TokenType) -> Precedence {
+    match toktype {
+        TokenType::Eq | TokenType::NotEq => Precedence::Equals,
+        TokenType::Lt | TokenType::Gt => Precedence::LessGreater,
+        TokenType::Plus | TokenType::Minus => Precedence::Sum,
+        TokenType::Slash | TokenType::Asterisk => Precedence::Product,
+        _ => Precedence::Lowest,
+    }
+}
 
 pub struct Parser {
     lexer: Lexer,
@@ -29,7 +50,7 @@ impl Parser {
         match self.curr_token.toktype {
             TokenType::Let => self.parse_let_statement(),
             TokenType::Return => self.parse_return_statement(),
-            _ => None,
+            _ => self.parse_expression_statement(),
         }
     }
 
@@ -91,6 +112,119 @@ impl Parser {
             token,
             return_value: ast::Expression::None,
         }))
+    }
+
+    fn parse_expression_statement(&mut self) -> Option<ast::Statement> {
+        let stmt = ast::ExpressionStatement {
+            token: self.curr_token.clone(),
+            expression: self.parse_expression(Precedence::Lowest),
+        };
+
+        if self.peek_token_is(&TokenType::Semicolon) {
+            self.next_token();
+        }
+
+        Some(ast::Statement::ExpressionStatement(stmt))
+    }
+
+    fn parse_prefix_expression(&mut self, toktype: &TokenType) -> ast::Expression {
+        match toktype {
+            TokenType::Ident => {
+                ast::Expression::Identifier(ast::Identifier{
+                    token: self.curr_token.clone(),
+                    value: self.curr_token.literal.clone(),
+                })
+            }
+            TokenType::Int => {
+                let token = self.curr_token.clone();
+                let value: i64 = match self.curr_token.literal.parse() {
+                    Ok(v) => v,
+                    Err(_) => {
+                        let msg = format!("Could not parse {} as integer", self.curr_token.literal);
+                        self.errors.push(String::from(msg));
+                        return ast::Expression::None;
+                    }
+                };
+                ast::Expression::IntegerLiteral(ast::IntegerLiteral {
+                    token,
+                    value,
+                })
+            }
+            TokenType::Bang | TokenType::Minus => {
+                let token = self.curr_token.clone();
+                let operator = self.curr_token.literal.clone();
+
+                self.next_token();
+
+                ast::Expression::PrefixExpression(ast::PrefixExpression {
+                    token,
+                    operator,
+                    right: Box::new(self.parse_expression(Precedence::Prefix)),
+                })
+            }
+            _ => ast::Expression::None,
+        }
+    }
+
+    fn parse_infix_expression(&mut self, toktype: &TokenType, left: ast::Expression) -> Result<ast::Expression, ast::Expression> {
+        match toktype {
+            TokenType::Plus 
+            | TokenType::Minus
+            | TokenType::Asterisk
+            | TokenType::Slash
+            | TokenType::Lt
+            | TokenType::Gt
+            | TokenType::Eq
+            | TokenType::NotEq => {
+                self.next_token();
+                let token = self.curr_token.clone();
+                let operator = self.curr_token.literal.clone();
+                let left = Box::new(left);
+
+                let precedence = self.curr_precedence();
+                self.next_token();
+                let right = Box::new(self.parse_expression(precedence));
+
+                Ok(ast::Expression::InfixExpression(ast::InfixExpression {
+                    token,
+                    operator,
+                    left,
+                    right,
+                }))
+            }
+            _ => Err(left),
+        }
+    }
+
+    fn no_prefix_parse_error(&mut self, tok: TokenType) {
+        self.errors.push(format!("No prefix parse function for {tok:?}"));
+    }
+
+    fn parse_expression(&mut self, precedence: Precedence) -> ast::Expression {
+        let mut left = self.parse_prefix_expression(&self.curr_token.toktype.clone());
+        if let ast::Expression::None = left {
+            self.no_prefix_parse_error(self.curr_token.toktype.clone());
+        }
+
+        while !self.peek_token_is(&TokenType::Semicolon) && precedence < self.peek_precedence() {
+            let infix = self.parse_infix_expression(&self.peek_token.toktype.clone(), left);
+
+            if let Err(left) = infix {
+                return left
+            }
+
+            left = infix.unwrap();
+        }
+
+        left
+    }
+
+    fn peek_precedence(&self) -> Precedence {
+        get_precedence(&self.peek_token.toktype)
+    }
+
+    fn curr_precedence(&self) -> Precedence {
+        get_precedence(&self.curr_token.toktype)
     }
 
     pub fn parse_program(&mut self) -> ast::Program {
@@ -210,6 +344,195 @@ return 993322;
             } else {
                 panic!("Expected ReturnStatement, got {:?}", stmt);
             }
+        }
+    }
+
+    #[test]
+    fn identifier_expression() {
+        let input = String::from("foobar;");
+
+        let lexer = Lexer::new(input);
+        let mut parser = Parser::new(lexer);
+        let program = parser.parse_program();
+        check_parser_errors(&parser);
+
+        assert_eq!(program.statements.len(), 1);
+        
+        if let ast::Statement::ExpressionStatement(stmt) = &program.statements[0] {
+            if let ast::Expression::Identifier(ident) = &stmt.expression {
+                assert_eq!(&ident.value, "foobar");
+                assert_eq!(&ident.token_literal(), "foobar");
+            } else {
+                panic!("Expected Identifier, got {:?} instead", stmt.expression);
+            }
+        } else {
+            panic!("Expected ExpressionStatement, got {:?} instead", program.statements[0]);
+        }
+    }
+
+    #[test]
+    fn integer_literal_expression() {
+        let input = String::from("5;");
+
+        let lexer = Lexer::new(input);
+        let mut parser = Parser::new(lexer);
+        let program = parser.parse_program();
+        check_parser_errors(&parser);
+
+        assert_eq!(program.statements.len(), 1);
+        
+        if let ast::Statement::ExpressionStatement(stmt) = &program.statements[0] {
+            if let ast::Expression::IntegerLiteral(literal) = &stmt.expression {
+                assert_eq!(literal.value, 5);
+                assert_eq!(&literal.token_literal(), "5");
+            } else {
+                panic!("Expected Identifier, got {:?} instead", stmt.expression);
+            }
+        } else {
+            panic!("Expected ExpressionStatement, got {:?} instead", program.statements[0]);
+        }
+    }
+
+    #[test]
+    fn parsing_prefix_expressions() {
+        let tests = [
+            ("!5", "!", 5),
+            ("-15", "-", 15),
+        ];
+
+        for (input, operator, value) in tests {
+            let lexer = Lexer::new(input.to_string());
+            let mut parser = Parser::new(lexer);
+            let program = parser.parse_program();
+            check_parser_errors(&parser);
+
+            assert_eq!(program.statements.len(), 1);
+
+            if let ast::Statement::ExpressionStatement(stmt) = &program.statements[0] {
+                if let ast::Expression::PrefixExpression(expr) = &stmt.expression {
+                    assert_eq!(expr.operator, operator);
+                    check_integer_literal(*expr.right.clone(), value);
+                } else {
+                    panic!("Expected PrefixExpression, got {:?} instead", stmt.expression);
+                }
+            } else {
+                panic!("Expected ExpressionStatement, got {:?} instead", program.statements[0]);
+            }
+        }
+    }
+
+    fn check_integer_literal(expr: ast::Expression, value: i64) {
+        if let ast::Expression::IntegerLiteral(int) = expr {
+            assert_eq!(int.value, value);
+            assert_eq!(int.token_literal(), value.to_string());
+        } else {
+            panic!("Expected IntegerLiteral, got {expr:?} instead");
+        }
+    }
+
+    #[test]
+    fn parsing_infix_expressions() {
+        let tests = [
+            ("5 + 5", 5, "+", 5),
+            ("5 - 5", 5, "-", 5),
+            ("5 * 5", 5, "*", 5),
+            ("5 / 5", 5, "/", 5),
+            ("5 > 5", 5, ">", 5),
+            ("5 < 5", 5, "<", 5),
+            ("5 == 5", 5, "==", 5),
+            ("5 != 5", 5, "!=", 5),
+        ];
+
+        for (input, left, operator, right) in tests {
+            let lexer = Lexer::new(input.to_string());
+            let mut parser = Parser::new(lexer);
+            let program = parser.parse_program();
+            check_parser_errors(&parser);
+
+            assert_eq!(program.statements.len(), 1);
+
+            if let ast::Statement::ExpressionStatement(stmt) = &program.statements[0] {
+                if let ast::Expression::InfixExpression(expr) = &stmt.expression {
+                    check_integer_literal(*expr.left.clone(), left);
+                    assert_eq!(expr.operator, operator);
+                    check_integer_literal(*expr.right.clone(), right);
+                } else {
+                    panic!("Expected InfixExpression, got {:?} instead", stmt.expression);
+                }
+            } else {
+                panic!("Expected ExpressionStatement, got {:?} instead", program.statements[0]);
+            }
+        }
+    }
+
+    #[test]
+    fn operator_precedence_parsing() {
+        let tests = [
+            (
+                "-a * b",
+                "((-a) * b)",
+            ),
+            (
+                "!-a",
+                "(!(-a))",
+            ),
+            (
+                "a + b + c",
+                "((a + b) + c)",
+            ),
+            (
+                "a + b - c",
+                "((a + b) - c)",
+            ),
+            (
+                "a * b * c",
+                "((a * b) * c)",
+            ),
+            (
+                "a * b / c",
+                "((a * b) / c)",
+            ),
+            (
+                "a + b / c",
+                "(a + (b / c))",
+            ),
+            (
+                "a + b * c + d / e - f",
+                "(((a + (b * c)) + (d / e)) - f)",
+            ),
+            (
+                "3 + 4; -5 * 5",
+                "(3 + 4)((-5) * 5)",
+            ),
+            (
+                "5 > 4 == 3 < 4",
+                "((5 > 4) == (3 < 4))",
+            ),
+            (
+                "5 < 4 != 3 > 4",
+                "((5 < 4) != (3 > 4))",
+            ),
+            (
+                "3 + 4 * 5 == 3 * 1 + 4 * 5",
+                "((3 + (4 * 5)) == ((3 * 1) + (4 * 5)))",
+            ),
+            (
+                "3 + 4 * 5 == 3 * 1 + 4 * 5",
+                "((3 + (4 * 5)) == ((3 * 1) + (4 * 5)))",
+            ),
+        ];
+
+        for (input, expected) in tests {
+            let lexer = Lexer::new(input.to_string());
+            let mut parser = Parser::new(lexer);
+            let program = parser.parse_program();
+            check_parser_errors(&parser);
+
+            dbg!(&program.statements);
+
+            let actual = program.string();
+
+            assert_eq!(actual, expected);
         }
     }
 }

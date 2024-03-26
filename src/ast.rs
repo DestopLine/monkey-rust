@@ -3,12 +3,14 @@ use std::fmt::Debug;
 
 pub trait Node {
     fn token_literal(&self) -> String;
+    fn string(&self) -> String;
 }
 
 #[derive(Debug)]
 pub enum Statement {
     Let(LetStatement),
     Return(ReturnStatement),
+    ExpressionStatement(ExpressionStatement),
 }
 
 impl Statement {
@@ -20,13 +22,25 @@ impl Node for Statement {
         match self {
             Self::Let(node) => node.token.literal.clone(),
             Self::Return(node) => node.token.literal.clone(),
+            Self::ExpressionStatement(node) => node.token.literal.clone(),
+        }
+    }
+
+    fn string(&self) -> String {
+        match self {
+            Self::Let(node) => node.string(),
+            Self::Return(node) => node.string(),
+            Self::ExpressionStatement(node) => node.string(),
         }
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Expression {
     Identifier(Identifier),
+    IntegerLiteral(IntegerLiteral),
+    PrefixExpression(PrefixExpression),
+    InfixExpression(InfixExpression),
     None,
 }
 
@@ -38,7 +52,20 @@ impl Node for Expression {
     fn token_literal(&self) -> String {
         match self {
             Self::Identifier(node) => node.token.literal.clone(),
-            _ => String::new(),
+            Self::IntegerLiteral(node) => node.token.literal.clone(),
+            Self::PrefixExpression(node) => node.token.literal.clone(),
+            Self::InfixExpression(node) => node.token.literal.clone(),
+            Self::None => String::new(),
+        }
+    }
+
+    fn string(&self) -> String {
+        match self {
+            Self::Identifier(node) => node.string(),
+            Self::IntegerLiteral(node) => node.string(),
+            Self::PrefixExpression(node) => node.string(),
+            Self::InfixExpression(node) => node.string(),
+            Self::None => String::new(),
         }
     }
 }
@@ -64,6 +91,16 @@ impl Node for Program {
             String::new()
         }
     }
+
+    fn string(&self) -> String {
+        let mut out = String::new();
+
+        for stmt in &self.statements {
+            out.push_str(&stmt.string());
+        }
+
+        out
+    }
 }
 
 #[derive(Debug)]
@@ -77,6 +114,21 @@ impl Node for LetStatement {
     fn token_literal(&self) -> String {
         self.token.literal.clone()
     }
+
+    fn string(&self) -> String {
+        let mut out = String::new();
+
+        out.push_str(&(self.token_literal() + " "));
+        out.push_str(&self.name.string());
+        out.push_str(" = ");
+
+        if !matches!(self.value, Expression::None) {
+            out.push_str(&self.value.string());
+        }
+
+        out.push_str(";");
+        out
+    }
 }
 
 #[derive(Debug)]
@@ -89,6 +141,35 @@ impl Node for ReturnStatement {
     fn token_literal(&self) -> String {
         self.token.literal.clone()
     }
+
+    fn string(&self) -> String {
+        let mut out = String::new();
+
+        out.push_str(&(self.token_literal() + " "));
+
+        if !matches!(self.return_value, Expression::None) {
+            out.push_str(&self.return_value.string());
+        }
+
+        out.push_str(";");
+        out
+    }
+}
+
+#[derive(Debug)]
+pub struct ExpressionStatement {
+    pub token: Token,
+    pub expression: Expression,
+}
+
+impl Node for ExpressionStatement {
+    fn token_literal(&self) -> String {
+        self.token.literal.clone()
+    }
+
+    fn string(&self) -> String {
+        self.expression.string()
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -100,5 +181,87 @@ pub struct Identifier {
 impl Node for Identifier {
     fn token_literal(&self) -> String {
         self.token.literal.clone()
+    }
+
+    fn string(&self) -> String {
+        self.value.clone()
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct IntegerLiteral {
+    pub token: Token,
+    pub value: i64,
+}
+
+impl Node for IntegerLiteral {
+    fn token_literal(&self) -> String {
+        self.token.literal.clone()
+    }
+
+    fn string(&self) -> String {
+        self.token_literal()
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct PrefixExpression {
+    pub token: Token,
+    pub operator: String,
+    pub right: Box<Expression>,
+}
+
+impl Node for PrefixExpression {
+    fn token_literal(&self) -> String {
+        self.token.literal.clone()
+    }
+
+    fn string(&self) -> String {
+        format!("({}{})", self.operator, self.right.string())
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct InfixExpression {
+    pub token: Token, // The operator token
+    pub operator: String,
+    pub left: Box<Expression>,
+    pub right: Box<Expression>,
+}
+
+impl Node for InfixExpression {
+    fn token_literal(&self) -> String {
+        self.token.literal.clone()
+    }
+
+    fn string(&self) -> String {
+        format!("({} {} {})", self.left.string(), self.operator, self.right.string())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::token::TokenType;
+
+    #[test]
+    fn string() {
+        let program = Program {
+            statements: vec![
+                Statement::Let(LetStatement {
+                    token: Token { toktype: TokenType::Let, literal: "let".to_string() },
+                    name: Identifier {
+                        token: Token { toktype: TokenType::Ident, literal: "myVar".to_string() },
+                        value: "myVar".to_string(),
+                    },
+                    value: Expression::Identifier(Identifier {
+                        token: Token { toktype: TokenType::Ident, literal: "anotherVar".to_string() },
+                        value: "anotherVar".to_string(),
+                    }),
+                }),
+            ],
+        };
+
+        assert_eq!(program.string(), String::from("let myVar = anotherVar;"));
     }
 }
