@@ -2,7 +2,7 @@ use std::io::{stdin, stdout, Write};
 
 use crate::{
     lexer::Lexer,
-    token::{Token, TokenType},
+    parser::Parser,
 };
 
 static PROMPT: &str = "> ";
@@ -19,16 +19,22 @@ pub fn start() {
         if input.len() < 2 {
             return;
         }
-        let mut lexer = Lexer::new(input.clone());
-        loop {
-            let tok = lexer.next_token();
-            match tok {
-                Token {
-                    toktype: TokenType::EOF,
-                    literal: _,
-                } => break,
-                _ => println!("{:?}", tok),
-            }
+        let lexer = Lexer::new(input.clone());
+        let mut parser = Parser::new(lexer);
+        let program = parser.parse_program();
+
+        if parser.errors().len() != 0 {
+            print_parser_errors(parser.errors());
+            continue;
         }
+
+        println!("{program:#?}");
+    }
+}
+
+fn print_parser_errors(errors: &Vec<String>) {
+    println!("Parser errors:");
+    for msg in errors {
+        println!("\t{msg}");
     }
 }
