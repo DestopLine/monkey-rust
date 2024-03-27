@@ -8,8 +8,8 @@ use crate::{
 static PROMPT: &str = "> ";
 
 pub fn start() {
-    let mut input = String::new();
     loop {
+        let mut input = String::new();
         print!("{}", PROMPT);
         let _ = stdout().flush();
         match stdin().read_line(&mut input) {
@@ -23,8 +23,11 @@ pub fn start() {
         loop {
             let tok = lexer.next_token();
             match tok {
-                Token{ toktype: TokenType::EOF, literal: _ } => break,
-                _ => println!("{:?}", tok)
+                Token {
+                    toktype: TokenType::EOF,
+                    literal: _,
+                } => break,
+                _ => println!("{:?}", tok),
             }
         }
     }
