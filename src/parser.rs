@@ -428,7 +428,7 @@ impl Parser {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ast::Node;
+    use crate::ast::MonkeyNode;
     use crate::ast::Statement;
 
     #[test]

@@ -1,8 +1,7 @@
 use std::io::{stdin, stdout, Write};
 
 use crate::{
-    lexer::Lexer,
-    parser::Parser,
+    evaluator::eval, lexer::Lexer, parser::Parser
 };
 
 static PROMPT: &str = "> ";
@@ -16,7 +15,8 @@ pub fn start() {
             Ok(_) => (),
             Err(e) => println!("Error: {e}"),
         }
-        if input.len() < 2 {
+        input = input.trim().to_string();
+        if input.is_empty() {
             return;
         }
         let lexer = Lexer::new(input.clone());
@@ -28,7 +28,9 @@ pub fn start() {
             continue;
         }
 
-        println!("{program:#?}");
+        if let Some(evaluated) = eval(crate::ast::Node::Program(program)) {
+            println!("{}", evaluated.inspect());
+        }
     }
 }
 

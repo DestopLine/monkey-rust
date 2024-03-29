@@ -1,0 +1,187 @@
+use crate::{ast, object::Object};
+
+//  TODO: Implement these as actual sigletons
+const NULL: Object = Object::Null;
+const TRUE: Object = Object::Boolean(true);
+const FALSE: Object = Object::Boolean(false);
+
+fn bool_native_to_obj(x: bool) -> Object {
+    if x {
+        TRUE
+    } else {
+        FALSE
+    }
+}
+
+pub fn eval(node: ast::Node) -> Option<Object> {
+    match node {
+        ast::Node::Program(program) => eval_statements(program.statements),
+        ast::Node::Statement(stmt) => match stmt {
+            ast::Statement::ExpressionStatement(expr_stmt) => {
+                eval(ast::Node::Expression(expr_stmt.expression))
+            }
+            _ => None,
+        },
+        ast::Node::Expression(expr) => match expr {
+            ast::Expression::IntegerLiteral(lit) => Some(Object::Integer(lit.value)),
+            ast::Expression::Boolean(lit) => Some(bool_native_to_obj(lit.value)),
+            ast::Expression::PrefixExpression(expr) => {
+                let right = eval(ast::Node::Expression(*expr.right))?;
+                Some(eval_prefix_expression(expr.operator, right))
+            }
+            ast::Expression::InfixExpression(expr) => {
+                let left = eval(ast::Node::Expression(*expr.left))?;
+                let right = eval(ast::Node::Expression(*expr.right))?;
+                Some(eval_infix_expression(expr.operator, left, right))
+            }
+            _ => None,
+        },
+    }
+}
+
+fn eval_statements(stmts: Vec<ast::Statement>) -> Option<Object> {
+    let mut result = None;
+
+    for stmt in stmts {
+        result = eval(ast::Node::Statement(stmt));
+    }
+
+    result
+}
+
+fn eval_prefix_expression(operator: String, right: Object) -> Object {
+    match operator.as_str() {
+        "!" => match right {
+            TRUE => FALSE,
+            FALSE => TRUE,
+            NULL => TRUE,
+            _ => FALSE,
+        },
+        "-" => match right {
+            Object::Integer(n) => Object::Integer(-n),
+            _ => NULL,
+        },
+        _ => NULL,
+    }
+}
+
+fn eval_infix_expression(operator: String, left: Object, right: Object) -> Object {
+    match (left, right) {
+        (Object::Integer(l), Object::Integer(r)) => eval_integer_infix_expression(operator, l, r),
+        (l, r) => match operator.as_str() {
+            "==" => bool_native_to_obj(l == r),
+            "!=" => bool_native_to_obj(l != r),
+            _ => NULL
+        }
+    }
+}
+
+fn eval_integer_infix_expression(operator: String, left: i64, right: i64) -> Object{
+    match operator.as_str() {
+        "+" => Object::Integer(left + right),
+        "-" => Object::Integer(left - right),
+        "*" => Object::Integer(left * right),
+        "/" => Object::Integer(left / right),
+        "<" => bool_native_to_obj(left < right),
+        ">" => bool_native_to_obj(left > right),
+        "==" => bool_native_to_obj(left == right),
+        "!=" => bool_native_to_obj(left != right),
+        _ => NULL,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{lexer::Lexer, parser::Parser};
+
+    use super::*;
+
+    #[test]
+    fn eval_integer_expression() {
+        let tests = [
+            ("5", 5),
+            ("10", 10),
+            ("-5", -5),
+            ("-10", -10),
+            ("5 + 5 + 5 + 5 -10", 10),
+            ("2 * 2 * 2 * 2 * 2", 32),
+            ("-50 + 100 + -50", 0),
+            ("5 * 2 + 10", 20),
+            ("5 + 2 * 10", 25),
+            ("20 + 2 * -10", 0),
+            ("50 / 2 * 2 + 10", 60),
+            ("2 * (5 + 10)", 30),
+            ("3 * 3 * 3 + 10", 37),
+            ("3 * (3 * 3) + 10", 37),
+            ("(5 + 10 * 2 + 15 / 3) * 2 + -10", 50),
+        ];
+
+        for (input, expected) in tests {
+            let evaluated = test_eval(input.to_string());
+            test_integer_object(evaluated, expected);
+        }
+    }
+
+    fn test_eval(input: String) -> Object {
+        let lexer = Lexer::new(input);
+        let mut parser = Parser::new(lexer);
+        let program = parser.parse_program();
+
+        eval(ast::Node::Program(program)).unwrap()
+    }
+
+    fn test_integer_object(obj: Object, expected: i64) {
+        assert_eq!(obj, Object::Integer(expected));
+    }
+
+    #[test]
+    fn eval_boolean_expression() {
+        let tests = [
+            ("true", true),
+            ("false", false),
+            ("1 < 2", true),
+            ("1 > 2", false),
+            ("1 < 1", false),
+            ("1 > 1", false),
+            ("1 == 1", true),
+            ("1 != 1", false),
+            ("1 == 2", false),
+            ("1 != 2", true),
+            ("true == true", true),
+            ("false == false", true),
+            ("true == false", false),
+            ("true != false", true),
+            ("false != true", true),
+            ("(1 < 2) == true", true),
+            ("(1 < 2) == false", false),
+            ("(1 > 2) == true", false),
+            ("(1 > 2) == false", true),
+        ];
+
+        for (input, expected) in tests {
+            let evaluated = test_eval(input.to_string());
+            test_boolean_object(evaluated, expected);
+        }
+    }
+
+    fn test_boolean_object(obj: Object, expected: bool) {
+        assert_eq!(obj, Object::Boolean(expected));
+    }
+
+    #[test]
+    fn bang_operator() {
+        let tests = [
+            ("!true", false),
+            ("!false", true),
+            ("!5", false),
+            ("!!true", true),
+            ("!!false", false),
+            ("!!5", true),
+        ];
+
+        for (input, expected) in tests {
+            let evaluated = test_eval(input.to_string());
+            test_boolean_object(evaluated, expected);
+        }
+    }
+}

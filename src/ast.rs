@@ -1,9 +1,15 @@
 use crate::token::Token;
 use std::fmt::Debug;
 
-pub trait Node {
+pub trait MonkeyNode {
     fn token_literal(&self) -> String;
     fn string(&self) -> String;
+}
+
+pub enum Node {
+    Program(Program),
+    Statement(Statement),
+    Expression(Expression),
 }
 
 #[derive(Debug, Clone)]
@@ -14,7 +20,7 @@ pub enum Statement {
     BlockStatement(BlockStatement),
 }
 
-impl Node for Statement {
+impl MonkeyNode for Statement {
     fn token_literal(&self) -> String {
         match self {
             Self::Let(node) => node.token.literal.clone(),
@@ -47,7 +53,7 @@ pub enum Expression {
     None,
 }
 
-impl Node for Expression {
+impl MonkeyNode for Expression {
     fn token_literal(&self) -> String {
         match self {
             Self::Identifier(node) => node.token.literal.clone(),
@@ -90,7 +96,7 @@ impl Program {
     }
 }
 
-impl Node for Program {
+impl MonkeyNode for Program {
     fn token_literal(&self) -> String {
         if self.statements.len() > 0 {
             self.statements[0].token_literal()
@@ -117,7 +123,7 @@ pub struct LetStatement {
     pub value: Expression,
 }
 
-impl Node for LetStatement {
+impl MonkeyNode for LetStatement {
     fn token_literal(&self) -> String {
         self.token.literal.clone()
     }
@@ -144,7 +150,7 @@ pub struct ReturnStatement {
     pub return_value: Expression,
 }
 
-impl Node for ReturnStatement {
+impl MonkeyNode for ReturnStatement {
     fn token_literal(&self) -> String {
         self.token.literal.clone()
     }
@@ -169,7 +175,7 @@ pub struct ExpressionStatement {
     pub expression: Expression,
 }
 
-impl Node for ExpressionStatement {
+impl MonkeyNode for ExpressionStatement {
     fn token_literal(&self) -> String {
         self.token.literal.clone()
     }
@@ -185,7 +191,7 @@ pub struct Identifier {
     pub value: String,
 }
 
-impl Node for Identifier {
+impl MonkeyNode for Identifier {
     fn token_literal(&self) -> String {
         self.token.literal.clone()
     }
@@ -201,7 +207,7 @@ pub struct IntegerLiteral {
     pub value: i64,
 }
 
-impl Node for IntegerLiteral {
+impl MonkeyNode for IntegerLiteral {
     fn token_literal(&self) -> String {
         self.token.literal.clone()
     }
@@ -218,7 +224,7 @@ pub struct PrefixExpression {
     pub right: Box<Expression>,
 }
 
-impl Node for PrefixExpression {
+impl MonkeyNode for PrefixExpression {
     fn token_literal(&self) -> String {
         self.token.literal.clone()
     }
@@ -236,7 +242,7 @@ pub struct InfixExpression {
     pub right: Box<Expression>,
 }
 
-impl Node for InfixExpression {
+impl MonkeyNode for InfixExpression {
     fn token_literal(&self) -> String {
         self.token.literal.clone()
     }
@@ -257,7 +263,7 @@ pub struct Boolean {
     pub value: bool,
 }
 
-impl Node for Boolean {
+impl MonkeyNode for Boolean {
     fn token_literal(&self) -> String {
         self.token.literal.clone()
     }
@@ -273,7 +279,7 @@ pub struct BlockStatement {
     pub statements: Vec<Statement>,
 }
 
-impl Node for BlockStatement {
+impl MonkeyNode for BlockStatement {
     fn token_literal(&self) -> String {
         self.token.literal.clone()
     }
@@ -291,7 +297,7 @@ pub struct IfExpression {
     pub alternative: Option<BlockStatement>,
 }
 
-impl Node for IfExpression {
+impl MonkeyNode for IfExpression {
     fn token_literal(&self) -> String {
         self.token.literal.clone()
     }
@@ -317,7 +323,7 @@ pub struct FunctionLiteral {
     pub body: BlockStatement,
 }
 
-impl Node for FunctionLiteral {
+impl MonkeyNode for FunctionLiteral {
     fn token_literal(&self) -> String {
         self.token.literal.clone()
     }
@@ -341,7 +347,7 @@ pub struct CallExpression {
     pub arguments: Vec<Expression>,
 }
 
-impl Node for CallExpression {
+impl MonkeyNode for CallExpression {
     fn token_literal(&self) -> String {
         self.token.literal.clone()
     }
