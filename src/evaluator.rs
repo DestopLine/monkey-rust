@@ -15,11 +15,12 @@ fn bool_native_to_obj(x: bool) -> Object {
 
 pub fn eval(node: ast::Node) -> Option<Object> {
     match node {
-        ast::Node::Program(program) => eval_statements(program.statements),
+        ast::Node::Program(program) => Some(eval_statements(program.statements)),
         ast::Node::Statement(stmt) => match stmt {
             ast::Statement::ExpressionStatement(expr_stmt) => {
                 eval(ast::Node::Expression(expr_stmt.expression))
             }
+            ast::Statement::BlockStatement(block) => Some(eval_statements(block.statements)),
             _ => None,
         },
         ast::Node::Expression(expr) => match expr {
@@ -34,19 +35,32 @@ pub fn eval(node: ast::Node) -> Option<Object> {
                 let right = eval(ast::Node::Expression(*expr.right))?;
                 Some(eval_infix_expression(expr.operator, left, right))
             }
+            ast::Expression::IfExpression(expr) => {
+                let condition = eval(ast::Node::Expression(*expr.condition)).unwrap();
+
+                if is_truthy(condition) {
+                    eval(ast::Node::Statement(ast::Statement::BlockStatement(
+                        expr.consequence,
+                    )))
+                } else if let Some(alt) = expr.alternative {
+                    eval(ast::Node::Statement(ast::Statement::BlockStatement(alt)))
+                } else {
+                    Some(NULL)
+                }
+            }
             _ => None,
         },
     }
 }
 
-fn eval_statements(stmts: Vec<ast::Statement>) -> Option<Object> {
+fn eval_statements(stmts: Vec<ast::Statement>) -> Object {
     let mut result = None;
 
     for stmt in stmts {
         result = eval(ast::Node::Statement(stmt));
     }
 
-    result
+    result.unwrap_or(NULL)
 }
 
 fn eval_prefix_expression(operator: String, right: Object) -> Object {
@@ -71,12 +85,12 @@ fn eval_infix_expression(operator: String, left: Object, right: Object) -> Objec
         (l, r) => match operator.as_str() {
             "==" => bool_native_to_obj(l == r),
             "!=" => bool_native_to_obj(l != r),
-            _ => NULL
-        }
+            _ => NULL,
+        },
     }
 }
 
-fn eval_integer_infix_expression(operator: String, left: i64, right: i64) -> Object{
+fn eval_integer_infix_expression(operator: String, left: i64, right: i64) -> Object {
     match operator.as_str() {
         "+" => Object::Integer(left + right),
         "-" => Object::Integer(left - right),
@@ -87,6 +101,15 @@ fn eval_integer_infix_expression(operator: String, left: i64, right: i64) -> Obj
         "==" => bool_native_to_obj(left == right),
         "!=" => bool_native_to_obj(left != right),
         _ => NULL,
+    }
+}
+
+fn is_truthy(obj: Object) -> bool {
+    match obj {
+        NULL => false,
+        TRUE => true,
+        FALSE => false,
+        _ => true,
     }
 }
 
@@ -183,5 +206,36 @@ mod tests {
             let evaluated = test_eval(input.to_string());
             test_boolean_object(evaluated, expected);
         }
+    }
+
+    enum Value {
+        Int(i64),
+        // Bool(bool),
+        Null,
+    }
+
+    #[test]
+    fn if_else_expressions() {
+        let tests = [
+            ("if (true) { 10 }", Value::Int(10)),
+            ("if (false) { 10 }", Value::Null),
+            ("if (1) { 10 }", Value::Int(10)),
+            ("if (1 < 2) { 10 }", Value::Int(10)),
+            ("if (1 > 2) { 10 }", Value::Null),
+            ("if (1 > 2) { 10 } else { 20 }", Value::Int(20)),
+            ("if (1 < 2) { 10 } else { 20 }", Value::Int(10)),
+        ];
+
+        for (input, expected) in tests {
+            let evaluated = test_eval(input.to_string());
+            match expected {
+                Value::Int(i) => test_integer_object(evaluated, i),
+                Value::Null => test_null_object(evaluated),
+            }
+        }
+    }
+
+    fn test_null_object(obj: Object) {
+        assert_eq!(obj, NULL);
     }
 }
