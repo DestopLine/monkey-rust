@@ -15,12 +15,16 @@ fn bool_native_to_obj(x: bool) -> Object {
 
 pub fn eval(node: ast::Node) -> Option<Object> {
     match node {
-        ast::Node::Program(program) => Some(eval_statements(program.statements)),
+        ast::Node::Program(program) => Some(eval_program(program)),
         ast::Node::Statement(stmt) => match stmt {
             ast::Statement::ExpressionStatement(expr_stmt) => {
                 eval(ast::Node::Expression(expr_stmt.expression))
             }
-            ast::Statement::BlockStatement(block) => Some(eval_statements(block.statements)),
+            ast::Statement::BlockStatement(block) => Some(eval_block_statement(block)),
+            ast::Statement::Return(ret) => {
+                let val = eval(ast::Node::Expression(ret.return_value))?;
+                Some(Object::ReturnValue(Box::new(val)))
+            }
             _ => None,
         },
         ast::Node::Expression(expr) => match expr {
@@ -53,11 +57,28 @@ pub fn eval(node: ast::Node) -> Option<Object> {
     }
 }
 
-fn eval_statements(stmts: Vec<ast::Statement>) -> Object {
+fn eval_program(program: ast::Program) -> Object {
     let mut result = None;
 
-    for stmt in stmts {
+    for stmt in program.statements {
         result = eval(ast::Node::Statement(stmt));
+        if let Some(Object::ReturnValue(ret_val)) = result {
+            result = Some(*ret_val);
+            break;
+        }
+    }
+
+    result.unwrap_or(NULL)
+}
+
+fn eval_block_statement(block: ast::BlockStatement) -> Object {
+    let mut result = None;
+
+    for stmt in block.statements {
+        result = eval(ast::Node::Statement(stmt));
+        if let Some(Object::ReturnValue(_)) = result {
+            break;
+        }
     }
 
     result.unwrap_or(NULL)
@@ -237,5 +258,20 @@ mod tests {
 
     fn test_null_object(obj: Object) {
         assert_eq!(obj, NULL);
+    }
+
+    #[test]
+    fn return_statement() {
+        let tests = [
+            ("return 10;", 10),
+            ("return 10; 9;", 10),
+            ("return 2 * 5; 9;", 10),
+            ("9; return 2 * 5; 9;", 10),
+        ];
+
+        for (input, expected) in tests {
+            let evaluated = test_eval(input.to_string());
+            test_integer_object(evaluated, expected);
+        }
     }
 }
