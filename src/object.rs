@@ -16,3 +16,14 @@ impl Object {
         }
     }
 }
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct Error {
+    pub message: String,
+}
+
+impl Error {
+    pub fn inspect(&self) -> String {
+        format!("ERROR: {}", self.message)
+    }
+}

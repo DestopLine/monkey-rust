@@ -28,8 +28,9 @@ pub fn start() {
             continue;
         }
 
-        if let Some(evaluated) = eval(crate::ast::Node::Program(program)) {
-            println!("{}", evaluated.inspect());
+        match eval(crate::ast::Node::Program(program)) {
+            Ok(evaluated) => println!("{}", evaluated.inspect()),
+            Err(error) => println!("{}", error.inspect()),
         }
     }
 }
