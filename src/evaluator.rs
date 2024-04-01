@@ -1,4 +1,7 @@
-use crate::{ast, object::{Object, Error}};
+use crate::{
+    ast,
+    object::{Environment, Error, Object},
+};
 
 //  TODO: Implement these as actual sigletons
 const NULL: Object = Object::Null;
@@ -20,55 +23,67 @@ fn bool_native_to_obj(x: bool) -> Object {
     }
 }
 
-pub fn eval(node: ast::Node) -> Result<Object, Error> {
+pub fn eval(node: ast::Node, env: &mut Environment) -> Result<Object, Error> {
     match node {
-        ast::Node::Program(program) => eval_program(program),
+        ast::Node::Program(program) => eval_program(program, env),
         ast::Node::Statement(stmt) => match stmt {
             ast::Statement::ExpressionStatement(expr_stmt) => {
-                eval(ast::Node::Expression(expr_stmt.expression))
+                eval(ast::Node::Expression(expr_stmt.expression), env)
             }
-            ast::Statement::BlockStatement(block) => eval_block_statement(block),
+            ast::Statement::BlockStatement(block) => eval_block_statement(block, env),
             ast::Statement::Return(ret) => {
-                let val = eval(ast::Node::Expression(ret.return_value))?;
+                let val = eval(ast::Node::Expression(ret.return_value), env)?;
                 Ok(Object::ReturnValue(Box::new(val)))
             }
-            _ => unimplemented!(),
+            ast::Statement::Let(let_stmt) => {
+                let val = eval(ast::Node::Expression(let_stmt.value), env)?;
+                env.set(let_stmt.name.value, val);
+                Ok(Object::Null)
+            }
         },
         ast::Node::Expression(expr) => match expr {
             ast::Expression::IntegerLiteral(lit) => Ok(Object::Integer(lit.value)),
             ast::Expression::Boolean(lit) => Ok(bool_native_to_obj(lit.value)),
             ast::Expression::PrefixExpression(expr) => {
-                let right = eval(ast::Node::Expression(*expr.right))?;
+                let right = eval(ast::Node::Expression(*expr.right), env)?;
                 eval_prefix_expression(expr.operator, right)
             }
             ast::Expression::InfixExpression(expr) => {
-                let left = eval(ast::Node::Expression(*expr.left))?;
-                let right = eval(ast::Node::Expression(*expr.right))?;
+                let left = eval(ast::Node::Expression(*expr.left), env)?;
+                let right = eval(ast::Node::Expression(*expr.right), env)?;
                 eval_infix_expression(expr.operator, left, right)
             }
             ast::Expression::IfExpression(expr) => {
-                let condition = eval(ast::Node::Expression(*expr.condition))?;
+                let condition = eval(ast::Node::Expression(*expr.condition), env)?;
 
                 if is_truthy(condition) {
-                    eval(ast::Node::Statement(ast::Statement::BlockStatement(
-                        expr.consequence,
-                    )))
+                    eval(
+                        ast::Node::Statement(ast::Statement::BlockStatement(expr.consequence)),
+                        env,
+                    )
                 } else if let Some(alt) = expr.alternative {
-                    eval(ast::Node::Statement(ast::Statement::BlockStatement(alt)))
+                    eval(
+                        ast::Node::Statement(ast::Statement::BlockStatement(alt)),
+                        env,
+                    )
                 } else {
                     Ok(NULL)
                 }
             }
+            ast::Expression::Identifier(ident) => match env.get(&ident.value) {
+                Some(v) => Ok(v),
+                None => Err(new_error!("Identifier not found: {}", ident.value)),
+            },
             _ => unimplemented!(),
         },
     }
 }
 
-fn eval_program(program: ast::Program) -> Result<Object, Error> {
+fn eval_program(program: ast::Program, env: &mut Environment) -> Result<Object, Error> {
     let mut result = Object::Null;
 
     for stmt in program.statements {
-        result = eval(ast::Node::Statement(stmt))?;
+        result = eval(ast::Node::Statement(stmt), env)?;
 
         if let Object::ReturnValue(ret_val) = result {
             result = *ret_val;
@@ -79,11 +94,14 @@ fn eval_program(program: ast::Program) -> Result<Object, Error> {
     Ok(result)
 }
 
-fn eval_block_statement(block: ast::BlockStatement) -> Result<Object, Error> {
+fn eval_block_statement(
+    block: ast::BlockStatement,
+    env: &mut Environment,
+) -> Result<Object, Error> {
     let mut result = Object::Null;
 
     for stmt in block.statements {
-        result = eval(ast::Node::Statement(stmt))?;
+        result = eval(ast::Node::Statement(stmt), env)?;
 
         if let Object::ReturnValue(_) = result {
             break;
@@ -114,14 +132,14 @@ fn eval_infix_expression(operator: String, left: Object, right: Object) -> Resul
         (Object::Integer(l), Object::Integer(r)) => eval_integer_infix_expression(operator, l, r),
         (l, r) => {
             if std::mem::discriminant(&l) != std::mem::discriminant(&r) {
-                return Err(new_error!("Type mismatch: {l:?} {operator} {r:?}"))
+                return Err(new_error!("Type mismatch: {l:?} {operator} {r:?}"));
             }
             match operator.as_str() {
                 "==" => Ok(bool_native_to_obj(l == r)),
                 "!=" => Ok(bool_native_to_obj(l != r)),
                 _ => Err(new_error!("Unknown operator: {l:?} {operator} {r:?}")),
             }
-        },
+        }
     }
 }
 
@@ -185,7 +203,7 @@ mod tests {
         let mut parser = Parser::new(lexer);
         let program = parser.parse_program();
 
-        eval(ast::Node::Program(program))
+        eval(ast::Node::Program(program), &mut Environment::new())
     }
 
     fn test_integer_object(obj: Object, expected: i64) {
@@ -295,8 +313,14 @@ mod tests {
             ("5 + true;", "Type mismatch: Integer(5) + Boolean(true)"),
             ("5 + true; 5;", "Type mismatch: Integer(5) + Boolean(true)"),
             ("-true", "Unknown operator: -Boolean(true)"),
-            ("true + false;", "Unknown operator: Boolean(true) + Boolean(false)"),
-            ("5; true + false; 5", "Unknown operator: Boolean(true) + Boolean(false)"),
+            (
+                "true + false;",
+                "Unknown operator: Boolean(true) + Boolean(false)",
+            ),
+            (
+                "5; true + false; 5",
+                "Unknown operator: Boolean(true) + Boolean(false)",
+            ),
             (
                 "if (10 > 1) { true + false; }",
                 "Unknown operator: Boolean(true) + Boolean(false)",
@@ -312,6 +336,7 @@ mod tests {
                 ",
                 "Unknown operator: Boolean(true) + Boolean(false)",
             ),
+            ("foobar", "Identifier not found: foobar"),
         ];
 
         for (input, expected) in tests {
@@ -322,6 +347,21 @@ mod tests {
             };
 
             assert_eq!(message, expected.to_string());
+        }
+    }
+
+    #[test]
+    fn let_statement() {
+        let tests = [
+            ("let a = 5; a;", 5),
+            ("let a = 5 * 5; a;", 25),
+            ("let a = 5; let b = a; b;", 5),
+            ("let a = 5; let b = a; let c = a + b + 5; c;", 15),
+        ];
+
+        for (input, expected) in tests {
+            let evaluated = test_eval(input.to_string()).unwrap();
+            test_integer_object(evaluated, expected);
         }
     }
 }
