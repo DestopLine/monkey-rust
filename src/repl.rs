@@ -1,11 +1,15 @@
-use std::io::{stdin, stdout, Write};
+use std::{
+    cell::RefCell,
+    io::{stdin, stdout, Write},
+    rc::Rc,
+};
 
-use crate::{evaluator::eval, lexer::Lexer, object::Environment, parser::Parser};
+use crate::{environment::Environment, evaluator::eval, lexer::Lexer, parser::Parser};
 
 static PROMPT: &str = "> ";
 
 pub fn start() {
-    let mut env = Environment::new();
+    let env = Rc::new(RefCell::new(Environment::new()));
 
     loop {
         let mut input = String::new();
@@ -28,7 +32,7 @@ pub fn start() {
             continue;
         }
 
-        match eval(crate::ast::Node::Program(program), &mut env) {
+        match eval(&program, &env) {
             Ok(evaluated) => println!("{}", evaluated.inspect()),
             Err(error) => println!("{}", error.inspect()),
         }

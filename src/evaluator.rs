@@ -1,12 +1,10 @@
+use std::{cell::RefCell, rc::Rc};
+
 use crate::{
     ast,
-    object::{Environment, Error, Object},
+    environment::{Env, Environment},
+    object::{self, Error, Function, Object},
 };
-
-//  TODO: Implement these as actual sigletons
-const NULL: Object = Object::Null;
-const TRUE: Object = Object::Boolean(true);
-const FALSE: Object = Object::Boolean(false);
 
 macro_rules! new_error {
     ($($arg:tt)*) => {{
@@ -15,160 +13,204 @@ macro_rules! new_error {
     }};
 }
 
-fn bool_native_to_obj(x: bool) -> Object {
-    if x {
-        TRUE
+pub fn eval(program: &ast::Program, env: &Env) -> Result<Rc<Object>, Error> {
+    let mut result = env.borrow().get_singleton(None);
+
+    for stmt in &program.statements {
+        result = eval_statement(stmt, env)?;
+
+        if let Object::ReturnValue(ret_val) = &*result {
+            result = Rc::clone(ret_val);
+            break;
+        }
+    }
+
+    Ok(result)
+}
+
+fn eval_block_statement(block: &ast::BlockStatement, env: &Env) -> Result<Rc<Object>, Error> {
+    let mut result = env.borrow().get_singleton(None);
+
+    for stmt in &block.statements {
+        result = eval_statement(&stmt, env)?;
+
+        if let Object::ReturnValue(_) = *result {
+            break;
+        }
+    }
+
+    Ok(result)
+}
+
+fn eval_statement(statement: &ast::Statement, env: &Env) -> Result<Rc<Object>, Error> {
+    match statement {
+        ast::Statement::ExpressionStatement(expr_stmt) => {
+            eval_expression(&expr_stmt.expression, env)
+        }
+        ast::Statement::BlockStatement(block) => eval_block_statement(block, env),
+        ast::Statement::Return(ret) => {
+            let val = eval_expression(&ret.return_value, env)?;
+            Ok(Rc::new(Object::ReturnValue(val)))
+        }
+        ast::Statement::Let(let_stmt) => {
+            let val = eval_expression(&let_stmt.value, env)?;
+            env.borrow_mut().set(let_stmt.name.value.clone(), val);
+            Ok(env.borrow().get_singleton(None))
+        }
+    }
+}
+
+fn eval_expression(expression: &ast::Expression, env: &Env) -> Result<Rc<Object>, Error> {
+    match expression {
+        ast::Expression::IntegerLiteral(lit) => Ok(Rc::new(Object::Integer(lit.value))),
+        ast::Expression::Boolean(lit) => Ok(env.borrow().get_singleton(Some(lit.value))),
+        ast::Expression::PrefixExpression(expr) => {
+            let right = eval_expression(&*expr.right, env)?;
+            eval_prefix_expression(&expr.operator, &right, env)
+        }
+        ast::Expression::InfixExpression(expr) => {
+            let left = eval_expression(&*expr.left, env)?;
+            let right = eval_expression(&*expr.right, env)?;
+            eval_infix_expression(&expr.operator, &left, &right, env)
+        }
+        ast::Expression::IfExpression(expr) => {
+            let condition = eval_expression(&*expr.condition, env)?;
+
+            if is_truthy(condition) {
+                eval_block_statement(&expr.consequence, env)
+            } else if let Some(alt) = &expr.alternative {
+                eval_block_statement(&alt, env)
+            } else {
+                Ok(env.borrow().get_singleton(None))
+            }
+        }
+        ast::Expression::Identifier(ident) => match env.borrow().get(&ident.value) {
+            Some(v) => Ok(v),
+            None => Err(new_error!("Identifier not found: {}", ident.value)),
+        },
+        ast::Expression::FunctionLiteral(lit) => Ok(Rc::new(Object::Function(object::Function {
+            parameters: lit.parameters.clone(),
+            body: lit.body.clone(),
+            env: Rc::clone(&env),
+        }))),
+        ast::Expression::CallExpression(call) => {
+            let evaluated_call = eval_expression(&*call.function, env)?;
+            let func = match &*evaluated_call {
+                Object::Function(f) => f,
+                obj @ _ => return Err(new_error!("Not a function: {obj:?}")),
+            };
+            let args = eval_expressions(&call.arguments, env)?;
+            apply_function(func, args)
+        }
+        _ => unimplemented!(),
+    }
+}
+
+fn apply_function(func: &Function, args: Vec<Rc<Object>>) -> Result<Rc<Object>, Error> {
+    let extended_env = extend_function_env(func, args);
+    let evaluated = eval_block_statement(&func.body, &extended_env)?;
+
+    if let Object::ReturnValue(val) = &*evaluated {
+        Ok(Rc::clone(val))
     } else {
-        FALSE
+        Ok(evaluated)
     }
 }
 
-pub fn eval(node: ast::Node, env: &mut Environment) -> Result<Object, Error> {
-    match node {
-        ast::Node::Program(program) => eval_program(program, env),
-        ast::Node::Statement(stmt) => match stmt {
-            ast::Statement::ExpressionStatement(expr_stmt) => {
-                eval(ast::Node::Expression(expr_stmt.expression), env)
-            }
-            ast::Statement::BlockStatement(block) => eval_block_statement(block, env),
-            ast::Statement::Return(ret) => {
-                let val = eval(ast::Node::Expression(ret.return_value), env)?;
-                Ok(Object::ReturnValue(Box::new(val)))
-            }
-            ast::Statement::Let(let_stmt) => {
-                let val = eval(ast::Node::Expression(let_stmt.value), env)?;
-                env.set(let_stmt.name.value, val);
-                Ok(Object::Null)
-            }
-        },
-        ast::Node::Expression(expr) => match expr {
-            ast::Expression::IntegerLiteral(lit) => Ok(Object::Integer(lit.value)),
-            ast::Expression::Boolean(lit) => Ok(bool_native_to_obj(lit.value)),
-            ast::Expression::PrefixExpression(expr) => {
-                let right = eval(ast::Node::Expression(*expr.right), env)?;
-                eval_prefix_expression(expr.operator, right)
-            }
-            ast::Expression::InfixExpression(expr) => {
-                let left = eval(ast::Node::Expression(*expr.left), env)?;
-                let right = eval(ast::Node::Expression(*expr.right), env)?;
-                eval_infix_expression(expr.operator, left, right)
-            }
-            ast::Expression::IfExpression(expr) => {
-                let condition = eval(ast::Node::Expression(*expr.condition), env)?;
+fn extend_function_env(func: &Function, args: Vec<Rc<Object>>) -> Env {
+    let mut env = Environment::enclosed_by(Rc::clone(&func.env));
 
-                if is_truthy(condition) {
-                    eval(
-                        ast::Node::Statement(ast::Statement::BlockStatement(expr.consequence)),
-                        env,
-                    )
-                } else if let Some(alt) = expr.alternative {
-                    eval(
-                        ast::Node::Statement(ast::Statement::BlockStatement(alt)),
-                        env,
-                    )
-                } else {
-                    Ok(NULL)
-                }
-            }
-            ast::Expression::Identifier(ident) => match env.get(&ident.value) {
-                Some(v) => Ok(v),
-                None => Err(new_error!("Identifier not found: {}", ident.value)),
-            },
-            _ => unimplemented!(),
-        },
+    for (param, arg) in func.parameters.iter().zip(args.iter()) {
+        env.set(param.value.clone(), arg.clone());
     }
+
+    Rc::new(RefCell::new(env))
 }
 
-fn eval_program(program: ast::Program, env: &mut Environment) -> Result<Object, Error> {
-    let mut result = Object::Null;
+fn eval_expressions(exprs: &Vec<ast::Expression>, env: &Env) -> Result<Vec<Rc<Object>>, Error> {
+    let mut result = Vec::new();
 
-    for stmt in program.statements {
-        result = eval(ast::Node::Statement(stmt), env)?;
-
-        if let Object::ReturnValue(ret_val) = result {
-            result = *ret_val;
-            break;
-        }
+    for expr in exprs {
+        let evaluated = eval_expression(&expr, env)?;
+        result.push(evaluated)
     }
 
     Ok(result)
 }
 
-fn eval_block_statement(
-    block: ast::BlockStatement,
-    env: &mut Environment,
-) -> Result<Object, Error> {
-    let mut result = Object::Null;
-
-    for stmt in block.statements {
-        result = eval(ast::Node::Statement(stmt), env)?;
-
-        if let Object::ReturnValue(_) = result {
-            break;
-        }
-    }
-
-    Ok(result)
-}
-
-fn eval_prefix_expression(operator: String, right: Object) -> Result<Object, Error> {
+fn eval_prefix_expression(
+    operator: &String,
+    right: &Rc<Object>,
+    env: &Env,
+) -> Result<Rc<Object>, Error> {
     match operator.as_str() {
-        "!" => Ok(match right {
-            TRUE => FALSE,
-            FALSE => TRUE,
-            NULL => TRUE,
-            _ => FALSE,
-        }),
-        "-" => match right {
-            Object::Integer(n) => Ok(Object::Integer(-n)),
+        "!" => Ok(env.borrow().get_singleton(match **right {
+            Object::Boolean(boolean) => Some(!boolean),
+            Object::Null => None,
+            _ => Some(false),
+        })),
+        "-" => match **right {
+            Object::Integer(n) => Ok(Rc::new(Object::Integer(-n))),
             _ => Err(new_error!("Unknown operator: -{right:?}")),
         },
         _ => Err(new_error!("Unknown operator: {operator}{right:?}")),
     }
 }
 
-fn eval_infix_expression(operator: String, left: Object, right: Object) -> Result<Object, Error> {
-    match (left, right) {
-        (Object::Integer(l), Object::Integer(r)) => eval_integer_infix_expression(operator, l, r),
+fn eval_infix_expression(
+    operator: &String,
+    left: &Rc<Object>,
+    right: &Rc<Object>,
+    env: &Env,
+) -> Result<Rc<Object>, Error> {
+    match (&**left, &**right) {
+        (Object::Integer(l), Object::Integer(r)) => {
+            eval_integer_infix_expression(operator, *l, *r, env)
+        }
         (l, r) => {
-            if std::mem::discriminant(&l) != std::mem::discriminant(&r) {
+            if std::mem::discriminant(l) != std::mem::discriminant(r) {
                 return Err(new_error!("Type mismatch: {l:?} {operator} {r:?}"));
             }
             match operator.as_str() {
-                "==" => Ok(bool_native_to_obj(l == r)),
-                "!=" => Ok(bool_native_to_obj(l != r)),
+                "==" => Ok(env.borrow().get_singleton(Some(l == r))),
+                "!=" => Ok(env.borrow().get_singleton(Some(l != r))),
                 _ => Err(new_error!("Unknown operator: {l:?} {operator} {r:?}")),
             }
         }
     }
 }
 
-fn eval_integer_infix_expression(operator: String, left: i64, right: i64) -> Result<Object, Error> {
+fn eval_integer_infix_expression(
+    operator: &String,
+    left: i64,
+    right: i64,
+    env: &Env,
+) -> Result<Rc<Object>, Error> {
     match operator.as_str() {
-        "+" => Ok(Object::Integer(left + right)),
-        "-" => Ok(Object::Integer(left - right)),
-        "*" => Ok(Object::Integer(left * right)),
-        "/" => Ok(Object::Integer(left / right)),
-        "<" => Ok(bool_native_to_obj(left < right)),
-        ">" => Ok(bool_native_to_obj(left > right)),
-        "==" => Ok(bool_native_to_obj(left == right)),
-        "!=" => Ok(bool_native_to_obj(left != right)),
+        "+" => Ok(Rc::new(Object::Integer(left + right))),
+        "-" => Ok(Rc::new(Object::Integer(left - right))),
+        "*" => Ok(Rc::new(Object::Integer(left * right))),
+        "/" => Ok(Rc::new(Object::Integer(left / right))),
+        "<" => Ok(env.borrow().get_singleton(Some(left < right))),
+        ">" => Ok(env.borrow().get_singleton(Some(left > right))),
+        "==" => Ok(env.borrow().get_singleton(Some(left == right))),
+        "!=" => Ok(env.borrow().get_singleton(Some(left != right))),
         _ => Err(new_error!("Unknown operator: {left} {operator} {right}")),
     }
 }
 
-fn is_truthy(obj: Object) -> bool {
-    match obj {
-        NULL => false,
-        TRUE => true,
-        FALSE => false,
+fn is_truthy(obj: Rc<Object>) -> bool {
+    match *obj {
+        Object::Null => false,
+        Object::Boolean(true) => true,
+        Object::Boolean(false) => false,
         _ => true,
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::{lexer::Lexer, parser::Parser};
+    use crate::{ast::MonkeyNode, lexer::Lexer, parser::Parser};
 
     use super::*;
 
@@ -198,16 +240,16 @@ mod tests {
         }
     }
 
-    fn test_eval(input: String) -> Result<Object, Error> {
+    fn test_eval(input: String) -> Result<Rc<Object>, Error> {
         let lexer = Lexer::new(input);
         let mut parser = Parser::new(lexer);
         let program = parser.parse_program();
 
-        eval(ast::Node::Program(program), &mut Environment::new())
+        eval(&program, &Rc::new(RefCell::new(Environment::new())))
     }
 
-    fn test_integer_object(obj: Object, expected: i64) {
-        assert_eq!(obj, Object::Integer(expected));
+    fn test_integer_object(obj: Rc<Object>, expected: i64) {
+        assert_eq!(*obj, Object::Integer(expected));
     }
 
     #[test]
@@ -240,8 +282,8 @@ mod tests {
         }
     }
 
-    fn test_boolean_object(obj: Object, expected: bool) {
-        assert_eq!(obj, Object::Boolean(expected));
+    fn test_boolean_object(obj: Rc<Object>, expected: bool) {
+        assert_eq!(*obj, Object::Boolean(expected));
     }
 
     #[test]
@@ -288,8 +330,8 @@ mod tests {
         }
     }
 
-    fn test_null_object(obj: Object) {
-        assert_eq!(obj, NULL);
+    fn test_null_object(obj: Rc<Object>) {
+        assert_eq!(*obj, Object::Null);
     }
 
     #[test]
@@ -363,5 +405,84 @@ mod tests {
             let evaluated = test_eval(input.to_string()).unwrap();
             test_integer_object(evaluated, expected);
         }
+    }
+
+    #[test]
+    fn function_object() {
+        let input = "fn(x) { x + 2; };";
+
+        let evaluated = test_eval(input.to_string()).unwrap();
+        let Object::Function(func) = &*evaluated else {
+            panic!("Expected Function, got {evaluated:?}");
+        };
+
+        assert_eq!(func.parameters.len(), 1);
+        assert_eq!(func.parameters[0].string(), "x".to_string());
+        assert_eq!(func.body.string(), "(x + 2)".to_string());
+    }
+
+    #[test]
+    fn function_application() {
+        let tests = [
+            ("let identity = fn(x) { x; }; identity(5);", 5),
+            ("let identity = fn(x) { return x; }; identity(5);", 5),
+            ("let double = fn(x) { x * 2; }; double(5);", 10),
+            ("let add = fn(x, y) { x + y; }; add(5, 5);", 10),
+            ("let add = fn(x, y) { x + y; }; add(5 + 5, add(5, 5));", 20),
+            ("fn(x) { x; }(5)", 5),
+        ];
+
+        for (input, expected) in tests {
+            let evaluated = test_eval(input.to_string()).unwrap();
+            test_integer_object(evaluated, expected);
+        }
+    }
+
+    #[test]
+    fn closures() {
+        let input = String::from(
+            "
+let newAdder = fn(x) {
+    fn(y) { x + y };
+};
+
+let addTwo = newAdder(2);
+addTwo(2);
+",
+        );
+        let evaluated = test_eval(input).unwrap();
+        test_integer_object(evaluated, 4);
+    }
+
+    #[test]
+    #[ignore = "too much noise from the `impl Drop`s"]
+    fn garbage_collector() {
+        //  NOTE: Use --ignored --show-output to test this one
+        let input = String::from(
+            "
+let foo = fn(x) {
+    let bar = 69;
+    if (x < 2) {
+        foo(x + 1)
+    }
+}
+foo(0);
+",
+        );
+
+        impl Drop for Object {
+            fn drop(&mut self) {
+                println!("Dropped {self:?}")
+            }
+        }
+
+        impl Drop for Environment {
+            fn drop(&mut self) {
+                println!("Dropped Env")
+            }
+        }
+
+        test_eval(input).unwrap();
+        println!("Done!");
     }
 }

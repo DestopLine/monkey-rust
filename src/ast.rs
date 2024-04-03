@@ -6,12 +6,7 @@ pub trait MonkeyNode {
     fn string(&self) -> String;
 }
 
-pub enum Node {
-    Program(Program),
-    Statement(Statement),
-    Expression(Expression),
-}
-
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub enum Statement {
     Let(LetStatement),

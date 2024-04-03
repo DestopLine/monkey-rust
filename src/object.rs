@@ -1,10 +1,16 @@
-use std::collections::HashMap;
+use std::rc::Rc;
+
+use crate::{
+    ast::{self, MonkeyNode},
+    environment::Env,
+};
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum Object {
     Integer(i64),
     Boolean(bool),
-    ReturnValue(Box<Object>),
+    ReturnValue(Rc<Object>),
+    Function(Function),
     Null,
 }
 
@@ -14,6 +20,11 @@ impl Object {
             Self::Integer(v) => v.to_string(),
             Self::Boolean(v) => v.to_string(),
             Self::ReturnValue(v) => v.inspect(),
+            Self::Function(func) => {
+                let params: Vec<String> = func.parameters.iter().map(|p| p.string()).collect();
+
+                format!("fn({}) {{\n{}\n}}", params.join(", "), func.body.string())
+            }
             Self::Null => String::from("null"),
         }
     }
@@ -30,24 +41,17 @@ impl Error {
     }
 }
 
-#[derive(Debug)]
-pub struct Environment {
-    store: HashMap<String, Object>,
+#[derive(Debug, Clone)]
+pub struct Function {
+    pub parameters: Vec<ast::Identifier>,
+    pub body: ast::BlockStatement,
+    pub env: Env,
 }
 
-impl Environment {
-    pub fn new() -> Self {
-        Self {
-            store: HashMap::new(),
-        }
-    }
-
-    pub fn get(&self, name: &String) -> Option<Object> {
-        let x = self.store.get(name)?;
-        Some(x.clone())
-    }
-
-    pub fn set(&mut self, name: String, val: Object) -> Option<Object> {
-        self.store.insert(name, val)
+impl PartialEq for Function {
+    fn eq(&self, other: &Self) -> bool {
+        self as *const _ == other as *const _
     }
 }
+
+impl Eq for Function {}
