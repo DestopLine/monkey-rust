@@ -28,6 +28,8 @@ pub enum TokenType {
     CloseParen,
     OpenBrace,
     CloseBrace,
+    OpenBracket,
+    CloseBracket,
 
     // Keywords
     Function,

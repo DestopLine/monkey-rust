@@ -68,7 +68,7 @@ impl Lexer {
                         'r' => out.push('\r'),
                         '"' => out.push('"'),
                         '\\' => out.push('\\'),
-                        _ => unimplemented!()
+                        _ => unimplemented!(),
                     }
                 }
                 c @ _ => out.push(c),
@@ -129,6 +129,8 @@ impl Lexer {
             ')' => TokenType::CloseParen,
             '{' => TokenType::OpenBrace,
             '}' => TokenType::CloseBrace,
+            '[' => TokenType::OpenBracket,
+            ']' => TokenType::CloseBracket,
             '"' => {
                 literal = self.read_string();
                 TokenType::String
@@ -279,7 +281,8 @@ if (5 < 10) {
     return true;
 } else {
     return false;
-}";
+}
+[1, 2];";
         let tests = [
             Token::new(TokenType::Bang, "!".to_string()),
             Token::new(TokenType::Minus, "-".to_string()),
@@ -310,6 +313,12 @@ if (5 < 10) {
             Token::new(TokenType::False, "false".to_string()),
             Token::new(TokenType::Semicolon, ";".to_string()),
             Token::new(TokenType::CloseBrace, "}".to_string()),
+            Token::new(TokenType::OpenBracket, "[".to_string()),
+            Token::new(TokenType::Int, "1".to_string()),
+            Token::new(TokenType::Comma, ",".to_string()),
+            Token::new(TokenType::Int, "2".to_string()),
+            Token::new(TokenType::CloseBracket, "]".to_string()),
+            Token::new(TokenType::Semicolon, ";".to_string()),
         ];
 
         let mut l = Lexer::new(input.to_string());
@@ -365,12 +374,14 @@ if (5 < 10) {
 
     #[test]
     fn string_escapes() {
-        let input = String::from(r#"
+        let input = String::from(
+            r#"
             "foo\nbar"
             "\t\tfoo"
             "foo \"bar\" foo"
             "foo\\bar"
-        "#);
+        "#,
+        );
 
         let tests = [
             Token::new(TokenType::String, "foo\nbar".to_string()),

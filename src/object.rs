@@ -1,15 +1,17 @@
 use std::{fmt::Debug, rc::Rc, str::FromStr};
 
 use crate::{
-    ast::{self, MonkeyNode}, builtins, environment::Env
+    ast::{self, MonkeyNode},
+    builtins,
+    environment::Env,
 };
-
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum Object {
     Integer(i64),
     Boolean(bool),
     String(String),
+    Array(Vec<Rc<Object>>),
     ReturnValue(Rc<Object>),
     Function(Function),
     Builtin(BuiltinFn),
@@ -22,10 +24,13 @@ impl Object {
             Self::Integer(v) => v.to_string(),
             Self::Boolean(v) => v.to_string(),
             Self::String(v) => v.to_string(),
+            Self::Array(v) => {
+                let elements = v.iter().map(|e| e.inspect()).collect::<Vec<_>>().join(", ");
+                format!("[{elements}]")
+            }
             Self::ReturnValue(v) => v.inspect(),
             Self::Function(func) => {
                 let params: Vec<String> = func.parameters.iter().map(|p| p.string()).collect();
-
                 format!("fn({}) {{\n{}\n}}", params.join(", "), func.body.string())
             }
             Self::Builtin(func) => format!("<builtin `{}`>", func.name),
@@ -98,10 +103,22 @@ impl FromStr for BuiltinFn {
     type Err = Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "len" => Ok(Self { name: s.to_string(), func: builtins::len }),
-            _ => Err(Error { message: format!("Builtin not found: {s}") }),
-        }
+        let func = match s {
+            "len" => builtins::len,
+            "first" => builtins::first,
+            "last" => builtins::last,
+            "rest" => builtins::rest,
+            "push" => builtins::push,
+            _ => {
+                return Err(Error {
+                    message: format!("Builtin not found: {s}"),
+                })
+            }
+        };
+        Ok(Self {
+            name: s.to_string(),
+            func,
+        })
     }
 }
 

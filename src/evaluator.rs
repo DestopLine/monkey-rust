@@ -3,7 +3,7 @@ use std::{cell::RefCell, rc::Rc, str::FromStr};
 use crate::{
     ast,
     environment::{Env, Environment},
-    object::{self, Error, Function, Object, new_error},
+    object::{self, new_error, Error, Function, Object},
 };
 
 pub fn eval(program: &ast::Program, env: &Env) -> Result<Rc<Object>, Error> {
@@ -83,17 +83,32 @@ fn eval_expression(expression: &ast::Expression, env: &Env) -> Result<Rc<Object>
             None => match object::BuiltinFn::from_str(&ident.value) {
                 Ok(func) => Ok(Rc::new(Object::Builtin(func))),
                 Err(_) => Err(new_error!("Identifier not found: {}", ident.value)),
-            } 
+            },
         },
         ast::Expression::FunctionLiteral(lit) => Ok(Rc::new(Object::Function(object::Function {
             parameters: lit.parameters.clone(),
             body: lit.body.clone(),
-            env: Rc::clone(&env),
+            env: Rc::clone(env),
         }))),
         ast::Expression::CallExpression(call) => {
             let evaluated_call = eval_expression(&*call.function, env)?;
             let args = eval_expressions(&call.arguments, env)?;
             apply_function(&evaluated_call, args, env)
+        }
+        ast::Expression::ArrayLiteral(arr) => Ok(Rc::new(Object::Array(eval_expressions(
+            &arr.elements,
+            env,
+        )?))),
+        ast::Expression::IndexExpression(idx) => {
+            let left = eval_expression(&idx.left, env)?;
+            let index = eval_expression(&idx.index, env)?;
+            let (Object::Array(array), Object::Integer(index)) = (&*left, &*index) else {
+                return Err(new_error!("Index operator not supported: {left:?}"));
+            };
+            Ok(match array.get(*index as usize) {
+                Some(obj) => Rc::clone(obj),
+                None => env.borrow().get_singleton(None),
+            })
         }
         _ => unimplemented!(),
     }
@@ -112,7 +127,7 @@ fn apply_function(obj: &Rc<Object>, args: Vec<Rc<Object>>, env: &Env) -> Result<
             }
         }
         Object::Builtin(builtin) => Ok(Object::filter_singleton((builtin.func)(args)?, env)),
-        o @ _ => Err(new_error!("Not a function: {o:?}"))
+        o @ _ => Err(new_error!("Not a function: {o:?}")),
     }
 }
 
@@ -171,7 +186,7 @@ fn eval_infix_expression(
             "==" => Ok(env.borrow().get_singleton(Some(l == r))),
             "!=" => Ok(env.borrow().get_singleton(Some(l != r))),
             _ => Err(new_error!("Unknown operator: {l:?} {operator} {r:?}")),
-        }
+        },
         (l, r) => {
             if std::mem::discriminant(l) != std::mem::discriminant(r) {
                 return Err(new_error!("Type mismatch: {l:?} {operator} {r:?}"));
@@ -519,8 +534,14 @@ foo(0);
             (r#"len("")"#, Ok(0)),
             (r#"len("four")"#, Ok(4)),
             (r#"len("hello world")"#, Ok(11)),
-            (r#"len(1)"#, Err("Argument to `len` not supported, got Integer(1)")),
-            (r#"len("one", "two")"#, Err("Wrong number of arguments: got 2, expected 1")),
+            (
+                r#"len(1)"#,
+                Err("Argument to `len` not supported, got Integer(1)"),
+            ),
+            (
+                r#"len("one", "two")"#,
+                Err("Wrong number of arguments: got 2, expected 1"),
+            ),
         ];
 
         for (input, expected) in tests {
@@ -531,6 +552,52 @@ foo(0);
                 (Err(Error { message }), Err(exp)) => assert_eq!(message, exp),
                 (Err(err), Ok(ok)) => panic!("Expected {ok}, got {err:?} instead"),
                 (Ok(ok), Err(err)) => panic!("Expected {err:?}, got {ok:?} instead"),
+            }
+        }
+    }
+
+    #[test]
+    fn array_literals() {
+        let input = "[1, 2 * 2, 3 + 3]".to_string();
+
+        let evaluated = test_eval(input).unwrap();
+
+        let Object::Array(elements) = &*evaluated else {
+            panic!("Expected Array, got {evaluated:?} instead");
+        };
+
+        assert_eq!(elements.len(), 3);
+        test_integer_object(elements[0].clone(), 1);
+        test_integer_object(elements[1].clone(), 4);
+        test_integer_object(elements[2].clone(), 6);
+    }
+
+    #[test]
+    fn array_index_expressions() {
+        let tests = [
+            ("[1, 2, 3][0]", Some(1)),
+            ("[1, 2, 3][1]", Some(2)),
+            ("[1, 2, 3][2]", Some(3)),
+            ("let i = 0; [1][i];", Some(1)),
+            ("[1, 2, 3][1 + 1];", Some(3)),
+            ("let myArray = [1, 2, 3]; myArray[2];", Some(3)),
+            (
+                "let myArray = [1, 2, 3]; myArray[0] + myArray[1] + myArray[2];",
+                Some(6),
+            ),
+            (
+                "let myArray = [1, 2, 3]; let i = myArray[0]; myArray[i]",
+                Some(2),
+            ),
+            ("[1, 2, 3][3]", None),
+            ("[1, 2, 3][-1]", None),
+        ];
+
+        for (input, expected) in tests {
+            let evaluated = test_eval(input.to_string()).unwrap();
+            match expected {
+                Some(v) => test_integer_object(evaluated, v),
+                None => test_null_object(evaluated),
             }
         }
     }

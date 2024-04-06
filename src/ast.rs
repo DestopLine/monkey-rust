@@ -41,11 +41,13 @@ pub enum Expression {
     IntegerLiteral(IntegerLiteral),
     Boolean(Boolean),
     StringLiteral(StringLiteral),
+    ArrayLiteral(ArrayLiteral),
     PrefixExpression(PrefixExpression),
     InfixExpression(InfixExpression),
     IfExpression(IfExpression),
     FunctionLiteral(FunctionLiteral),
     CallExpression(CallExpression),
+    IndexExpression(IndexExpression),
     None,
 }
 
@@ -56,11 +58,13 @@ impl MonkeyNode for Expression {
             Self::IntegerLiteral(node) => node.token.literal.clone(),
             Self::Boolean(node) => node.token.literal.clone(),
             Self::StringLiteral(node) => node.token.literal.clone(),
+            Self::ArrayLiteral(node) => node.token.literal.clone(),
             Self::PrefixExpression(node) => node.token.literal.clone(),
             Self::InfixExpression(node) => node.token.literal.clone(),
             Self::IfExpression(node) => node.token.literal.clone(),
             Self::FunctionLiteral(node) => node.token.literal.clone(),
             Self::CallExpression(node) => node.token.literal.clone(),
+            Self::IndexExpression(node) => node.token.literal.clone(),
             Self::None => String::new(),
         }
     }
@@ -71,11 +75,13 @@ impl MonkeyNode for Expression {
             Self::IntegerLiteral(node) => node.string(),
             Self::Boolean(node) => node.string(),
             Self::StringLiteral(node) => node.string(),
+            Self::ArrayLiteral(node) => node.string(),
             Self::PrefixExpression(node) => node.string(),
             Self::InfixExpression(node) => node.string(),
             Self::IfExpression(node) => node.string(),
             Self::FunctionLiteral(node) => node.string(),
             Self::CallExpression(node) => node.string(),
+            Self::IndexExpression(node) => node.string(),
             Self::None => String::new(),
         }
     }
@@ -288,6 +294,28 @@ impl MonkeyNode for StringLiteral {
 }
 
 #[derive(Debug, Clone)]
+pub struct ArrayLiteral {
+    pub token: Token,
+    pub elements: Vec<Expression>,
+}
+
+impl MonkeyNode for ArrayLiteral {
+    fn token_literal(&self) -> String {
+        self.token.literal.clone()
+    }
+
+    fn string(&self) -> String {
+        let elements = self
+            .elements
+            .iter()
+            .map(|e| e.string())
+            .collect::<Vec<_>>()
+            .join(", ");
+        format!("[{elements}]")
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct BlockStatement {
     pub token: Token,
     pub statements: Vec<Statement>,
@@ -370,6 +398,23 @@ impl MonkeyNode for CallExpression {
         let args: Vec<_> = self.arguments.iter().map(|p| p.string()).collect();
 
         format!("{}({})", self.function.string(), args.join(", "),)
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct IndexExpression {
+    pub token: Token,
+    pub left: Box<Expression>,
+    pub index: Box<Expression>,
+}
+
+impl MonkeyNode for IndexExpression {
+    fn token_literal(&self) -> String {
+        self.token.literal.clone()
+    }
+
+    fn string(&self) -> String {
+        format!("({}[{}])", self.left.string(), self.index.string())
     }
 }
 
