@@ -318,6 +318,10 @@ impl Parser {
                     body,
                 })
             }
+            TokenType::String => ast::Expression::StringLiteral(ast::StringLiteral {
+                token: self.curr_token.clone(),
+                value: self.curr_token.literal.clone(),
+            }),
             _ => ast::Expression::None,
         }
     }
@@ -983,5 +987,27 @@ let 838383;
                 program.statements[0]
             );
         }
+    }
+
+    #[test]
+    fn string_literal_expression() {
+        let input = r#" "hello world" "#.to_string();
+
+        let lexer = Lexer::new(input);
+        let mut parser = Parser::new(lexer);
+        let program = parser.parse_program();
+        check_parser_errors(&parser);
+
+        assert_eq!(program.statements.len(), 1);
+
+        let ast::Statement::ExpressionStatement(stmt) = &program.statements[0] else {
+            panic!("Expected ExpressionStatement, got {:?} instead", program.statements[0]);
+        };
+
+        let ast::Expression::StringLiteral(lit) = &stmt.expression else {
+            panic!("Expected StringLiteral, got {:?} instead", stmt.expression);
+        };
+
+        assert_eq!(lit.value, "hello world".to_string());
     }
 }

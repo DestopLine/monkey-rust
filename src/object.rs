@@ -1,16 +1,18 @@
-use std::rc::Rc;
+use std::{fmt::Debug, rc::Rc, str::FromStr};
 
 use crate::{
-    ast::{self, MonkeyNode},
-    environment::Env,
+    ast::{self, MonkeyNode}, builtins, environment::Env
 };
+
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum Object {
     Integer(i64),
     Boolean(bool),
+    String(String),
     ReturnValue(Rc<Object>),
     Function(Function),
+    Builtin(BuiltinFn),
     Null,
 }
 
@@ -19,13 +21,23 @@ impl Object {
         match self {
             Self::Integer(v) => v.to_string(),
             Self::Boolean(v) => v.to_string(),
+            Self::String(v) => v.to_string(),
             Self::ReturnValue(v) => v.inspect(),
             Self::Function(func) => {
                 let params: Vec<String> = func.parameters.iter().map(|p| p.string()).collect();
 
                 format!("fn({}) {{\n{}\n}}", params.join(", "), func.body.string())
             }
+            Self::Builtin(func) => format!("<builtin `{}`>", func.name),
             Self::Null => String::from("null"),
+        }
+    }
+
+    pub fn filter_singleton(obj: Rc<Self>, env: &Env) -> Rc<Self> {
+        match *obj {
+            Self::Boolean(b) => env.borrow().get_singleton(Some(b)),
+            Self::Null => env.borrow().get_singleton(None),
+            _ => obj,
         }
     }
 }
@@ -36,10 +48,31 @@ pub struct Error {
 }
 
 impl Error {
+    pub fn arg_num(got: usize, expected: usize) -> Self {
+        Self {
+            message: format!("Wrong number of arguments: got {got}, expected {expected}"),
+        }
+    }
+
+    pub fn arg_type(fn_name: &str, got: &Object) -> Self {
+        Self {
+            message: format!("Argument to `{fn_name}` not supported, got {got:?}"),
+        }
+    }
+
     pub fn inspect(&self) -> String {
         format!("ERROR: {}", self.message)
     }
 }
+
+macro_rules! new_error {
+    ($($arg:tt)*) => {{
+        let res = Error { message: std::fmt::format(std::format_args!($($arg)*)) };
+        res
+    }};
+}
+
+pub(crate) use new_error;
 
 #[derive(Debug, Clone)]
 pub struct Function {
@@ -55,3 +88,39 @@ impl PartialEq for Function {
 }
 
 impl Eq for Function {}
+
+pub struct BuiltinFn {
+    pub name: String,
+    pub func: fn(builtins::In) -> builtins::Out,
+}
+
+impl FromStr for BuiltinFn {
+    type Err = Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "len" => Ok(Self { name: s.to_string(), func: builtins::len }),
+            _ => Err(Error { message: format!("Builtin not found: {s}") }),
+        }
+    }
+}
+
+impl Debug for BuiltinFn {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "BuiltinFn {{ name: {}, func: builtin }}", self.name)
+    }
+}
+
+impl PartialEq for BuiltinFn {
+    fn eq(&self, other: &Self) -> bool {
+        self.name == other.name
+    }
+}
+
+impl Eq for BuiltinFn {}
+
+impl Clone for BuiltinFn {
+    fn clone(&self) -> Self {
+        Self::from_str(&self.name).unwrap()
+    }
+}

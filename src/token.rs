@@ -6,6 +6,7 @@ pub enum TokenType {
     // Identifiers + literals
     Ident,
     Int,
+    String,
 
     // Operators
     Assign,
@@ -38,7 +39,7 @@ pub enum TokenType {
     Return,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Token {
     pub toktype: TokenType,
     pub literal: String,

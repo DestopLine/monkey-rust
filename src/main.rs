@@ -1,6 +1,7 @@
 use crate::repl::start;
 
 mod ast;
+mod builtins;
 mod environment;
 mod evaluator;
 mod lexer;

@@ -1,17 +1,10 @@
-use std::{cell::RefCell, rc::Rc};
+use std::{cell::RefCell, rc::Rc, str::FromStr};
 
 use crate::{
     ast,
     environment::{Env, Environment},
-    object::{self, Error, Function, Object},
+    object::{self, Error, Function, Object, new_error},
 };
-
-macro_rules! new_error {
-    ($($arg:tt)*) => {{
-        let res = Error { message: std::fmt::format(std::format_args!($($arg)*)) };
-        res
-    }};
-}
 
 pub fn eval(program: &ast::Program, env: &Env) -> Result<Rc<Object>, Error> {
     let mut result = env.borrow().get_singleton(None);
@@ -64,6 +57,7 @@ fn eval_expression(expression: &ast::Expression, env: &Env) -> Result<Rc<Object>
     match expression {
         ast::Expression::IntegerLiteral(lit) => Ok(Rc::new(Object::Integer(lit.value))),
         ast::Expression::Boolean(lit) => Ok(env.borrow().get_singleton(Some(lit.value))),
+        ast::Expression::StringLiteral(lit) => Ok(Rc::new(Object::String(lit.value.clone()))),
         ast::Expression::PrefixExpression(expr) => {
             let right = eval_expression(&*expr.right, env)?;
             eval_prefix_expression(&expr.operator, &right, env)
@@ -86,7 +80,10 @@ fn eval_expression(expression: &ast::Expression, env: &Env) -> Result<Rc<Object>
         }
         ast::Expression::Identifier(ident) => match env.borrow().get(&ident.value) {
             Some(v) => Ok(v),
-            None => Err(new_error!("Identifier not found: {}", ident.value)),
+            None => match object::BuiltinFn::from_str(&ident.value) {
+                Ok(func) => Ok(Rc::new(Object::Builtin(func))),
+                Err(_) => Err(new_error!("Identifier not found: {}", ident.value)),
+            } 
         },
         ast::Expression::FunctionLiteral(lit) => Ok(Rc::new(Object::Function(object::Function {
             parameters: lit.parameters.clone(),
@@ -95,25 +92,27 @@ fn eval_expression(expression: &ast::Expression, env: &Env) -> Result<Rc<Object>
         }))),
         ast::Expression::CallExpression(call) => {
             let evaluated_call = eval_expression(&*call.function, env)?;
-            let func = match &*evaluated_call {
-                Object::Function(f) => f,
-                obj @ _ => return Err(new_error!("Not a function: {obj:?}")),
-            };
             let args = eval_expressions(&call.arguments, env)?;
-            apply_function(func, args)
+            apply_function(&evaluated_call, args, env)
         }
         _ => unimplemented!(),
     }
 }
 
-fn apply_function(func: &Function, args: Vec<Rc<Object>>) -> Result<Rc<Object>, Error> {
-    let extended_env = extend_function_env(func, args);
-    let evaluated = eval_block_statement(&func.body, &extended_env)?;
+fn apply_function(obj: &Rc<Object>, args: Vec<Rc<Object>>, env: &Env) -> Result<Rc<Object>, Error> {
+    match &**obj {
+        Object::Function(func) => {
+            let extended_env = extend_function_env(&func, args);
+            let evaluated = eval_block_statement(&func.body, &extended_env)?;
 
-    if let Object::ReturnValue(val) = &*evaluated {
-        Ok(Rc::clone(val))
-    } else {
-        Ok(evaluated)
+            if let Object::ReturnValue(val) = &*evaluated {
+                Ok(Rc::clone(val))
+            } else {
+                Ok(evaluated)
+            }
+        }
+        Object::Builtin(builtin) => Ok(Object::filter_singleton((builtin.func)(args)?, env)),
+        o @ _ => Err(new_error!("Not a function: {o:?}"))
     }
 }
 
@@ -166,6 +165,12 @@ fn eval_infix_expression(
     match (&**left, &**right) {
         (Object::Integer(l), Object::Integer(r)) => {
             eval_integer_infix_expression(operator, *l, *r, env)
+        }
+        (Object::String(l), Object::String(r)) => match operator.as_str() {
+            "+" => Ok(Rc::new(Object::String(format!("{l}{r}")))),
+            "==" => Ok(env.borrow().get_singleton(Some(l == r))),
+            "!=" => Ok(env.borrow().get_singleton(Some(l != r))),
+            _ => Err(new_error!("Unknown operator: {l:?} {operator} {r:?}")),
         }
         (l, r) => {
             if std::mem::discriminant(l) != std::mem::discriminant(r) {
@@ -379,6 +384,10 @@ mod tests {
                 "Unknown operator: Boolean(true) + Boolean(false)",
             ),
             ("foobar", "Identifier not found: foobar"),
+            (
+                r#" "Hello" - "World" "#,
+                r#"Unknown operator: "Hello" - "World""#,
+            ),
         ];
 
         for (input, expected) in tests {
@@ -470,19 +479,59 @@ foo(0);
 ",
         );
 
-        impl Drop for Object {
-            fn drop(&mut self) {
-                println!("Dropped {self:?}")
-            }
-        }
-
-        impl Drop for Environment {
-            fn drop(&mut self) {
-                println!("Dropped Env")
-            }
-        }
+        // impl Drop for Object {
+        //     fn drop(&mut self) {
+        //         println!("Dropped {self:?}")
+        //     }
+        // }
+        //
+        // impl Drop for Environment {
+        //     fn drop(&mut self) {
+        //         println!("Dropped Env")
+        //     }
+        // }
 
         test_eval(input).unwrap();
         println!("Done!");
+    }
+
+    #[test]
+    fn string_literal() {
+        let input = r#" "Hello World!" "#.to_string();
+
+        let evaluated = test_eval(input).unwrap();
+
+        assert_eq!(*evaluated, Object::String(String::from("Hello World!")));
+    }
+
+    #[test]
+    fn string_concatenation() {
+        let input = r#" "Hello" + " " + "World!" "#.to_string();
+
+        let evaluated = test_eval(input).unwrap();
+
+        assert_eq!(*evaluated, Object::String(String::from("Hello World!")));
+    }
+
+    #[test]
+    fn builtin_functions() {
+        let tests = [
+            (r#"len("")"#, Ok(0)),
+            (r#"len("four")"#, Ok(4)),
+            (r#"len("hello world")"#, Ok(11)),
+            (r#"len(1)"#, Err("Argument to `len` not supported, got Integer(1)")),
+            (r#"len("one", "two")"#, Err("Wrong number of arguments: got 2, expected 1")),
+        ];
+
+        for (input, expected) in tests {
+            let evaluated = test_eval(input.to_string());
+
+            match (evaluated, expected) {
+                (Ok(obj), Ok(i)) => test_integer_object(obj, i),
+                (Err(Error { message }), Err(exp)) => assert_eq!(message, exp),
+                (Err(err), Ok(ok)) => panic!("Expected {ok}, got {err:?} instead"),
+                (Ok(ok), Err(err)) => panic!("Expected {err:?}, got {ok:?} instead"),
+            }
+        }
     }
 }

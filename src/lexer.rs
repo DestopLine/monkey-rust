@@ -53,6 +53,30 @@ impl Lexer {
         self.input[position..self.position].to_string()
     }
 
+    fn read_string(&mut self) -> String {
+        let mut out = String::new();
+        loop {
+            self.read_char();
+            match self.ch {
+                '"' => break,
+                '\0' => unimplemented!(),
+                '\\' => {
+                    self.read_char();
+                    match self.ch {
+                        'n' => out.push('\n'),
+                        't' => out.push('\t'),
+                        'r' => out.push('\r'),
+                        '"' => out.push('"'),
+                        '\\' => out.push('\\'),
+                        _ => unimplemented!()
+                    }
+                }
+                c @ _ => out.push(c),
+            }
+        }
+        out
+    }
+
     fn peek_char(&self) -> char {
         if self.read_position >= self.input.len() {
             '\0'
@@ -105,6 +129,10 @@ impl Lexer {
             ')' => TokenType::CloseParen,
             '{' => TokenType::OpenBrace,
             '}' => TokenType::CloseBrace,
+            '"' => {
+                literal = self.read_string();
+                TokenType::String
+            }
             '\0' => {
                 literal = "".to_string();
                 TokenType::EOF
@@ -315,6 +343,47 @@ if (5 < 10) {
             assert_eq!(tok.toktype, expected.toktype);
             assert_eq!(tok.literal, expected.literal);
             println!("{}", tok.literal);
+        }
+    }
+
+    #[test]
+    fn string_tokens() {
+        let input = String::from(r#""foobar" "foo bar""#);
+
+        let tests = [
+            Token::new(TokenType::String, "foobar".to_string()),
+            Token::new(TokenType::String, "foo bar".to_string()),
+        ];
+
+        let mut lexer = Lexer::new(input);
+
+        for expected in tests {
+            let tok = lexer.next_token();
+            assert_eq!(tok, expected);
+        }
+    }
+
+    #[test]
+    fn string_escapes() {
+        let input = String::from(r#"
+            "foo\nbar"
+            "\t\tfoo"
+            "foo \"bar\" foo"
+            "foo\\bar"
+        "#);
+
+        let tests = [
+            Token::new(TokenType::String, "foo\nbar".to_string()),
+            Token::new(TokenType::String, "\t\tfoo".to_string()),
+            Token::new(TokenType::String, "foo \"bar\" foo".to_string()),
+            Token::new(TokenType::String, "foo\\bar".to_string()),
+        ];
+
+        let mut lexer = Lexer::new(input);
+
+        for expected in tests {
+            let tok = lexer.next_token();
+            assert_eq!(tok, expected);
         }
     }
 }

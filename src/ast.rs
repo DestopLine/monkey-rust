@@ -40,6 +40,7 @@ pub enum Expression {
     Identifier(Identifier),
     IntegerLiteral(IntegerLiteral),
     Boolean(Boolean),
+    StringLiteral(StringLiteral),
     PrefixExpression(PrefixExpression),
     InfixExpression(InfixExpression),
     IfExpression(IfExpression),
@@ -54,6 +55,7 @@ impl MonkeyNode for Expression {
             Self::Identifier(node) => node.token.literal.clone(),
             Self::IntegerLiteral(node) => node.token.literal.clone(),
             Self::Boolean(node) => node.token.literal.clone(),
+            Self::StringLiteral(node) => node.token.literal.clone(),
             Self::PrefixExpression(node) => node.token.literal.clone(),
             Self::InfixExpression(node) => node.token.literal.clone(),
             Self::IfExpression(node) => node.token.literal.clone(),
@@ -68,6 +70,7 @@ impl MonkeyNode for Expression {
             Self::Identifier(node) => node.string(),
             Self::IntegerLiteral(node) => node.string(),
             Self::Boolean(node) => node.string(),
+            Self::StringLiteral(node) => node.string(),
             Self::PrefixExpression(node) => node.string(),
             Self::InfixExpression(node) => node.string(),
             Self::IfExpression(node) => node.string(),
@@ -259,6 +262,22 @@ pub struct Boolean {
 }
 
 impl MonkeyNode for Boolean {
+    fn token_literal(&self) -> String {
+        self.token.literal.clone()
+    }
+
+    fn string(&self) -> String {
+        self.token_literal()
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct StringLiteral {
+    pub token: Token,
+    pub value: String,
+}
+
+impl MonkeyNode for StringLiteral {
     fn token_literal(&self) -> String {
         self.token.literal.clone()
     }
