@@ -24,6 +24,19 @@ pub fn puts(args: In) -> Out {
     Ok(Rc::new(Object::Null))
 }
 
+// Same as puts but without newline separator
+pub fn print(args: In) -> Out {
+    for arg in &*args {
+        if let Object::String(s) = &**arg {
+            print!("{s}")
+        } else {
+            print!("{arg}")
+        }
+    }
+    print!("\n");
+    Ok(Rc::new(Object::Null))
+}
+
 pub fn len(args: In) -> Out {
     check_length(1, args.len())?;
 

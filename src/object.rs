@@ -154,6 +154,7 @@ impl FromStr for BuiltinFn {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let func = match s {
             "puts" => builtins::puts,
+            "print" => builtins::print,
             "len" => builtins::len,
             "first" => builtins::first,
             "last" => builtins::last,
