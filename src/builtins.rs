@@ -13,6 +13,17 @@ fn check_length(expected: usize, length: usize) -> Result<(), Error> {
     }
 }
 
+pub fn puts(args: In) -> Out {
+    for arg in &*args {
+        if let Object::String(s) = &**arg {
+            println!("{s}")
+        } else {
+            println!("{arg}")
+        }
+    }
+    Ok(Rc::new(Object::Null))
+}
+
 pub fn len(args: In) -> Out {
     check_length(1, args.len())?;
 
