@@ -30,12 +30,12 @@ pub fn start() {
 
         match eval(&program, &env) {
             Ok(evaluated) => println!("{evaluated}"),
-            Err(error) => println!("{}", error.inspect()),
+            Err(error) => println!("{error}"),
         }
     }
 }
 
-fn print_parser_errors(errors: &Vec<String>) {
+pub fn print_parser_errors(errors: &Vec<String>) {
     println!("Parser errors:");
     for msg in errors {
         println!("\t{msg}");

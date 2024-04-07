@@ -97,9 +97,11 @@ impl Error {
             message: format!("Argument to `{fn_name}` not supported, got {got:?}"),
         }
     }
+}
 
-    pub fn inspect(&self) -> String {
-        format!("ERROR: {}", self.message)
+impl Display for Error {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "ERROR: {}", self.message)
     }
 }
 
