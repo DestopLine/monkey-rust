@@ -1,5 +1,4 @@
 use crate::token::Token;
-use std::fmt::Debug;
 
 pub trait MonkeyNode {
     fn token_literal(&self) -> String;
@@ -42,6 +41,7 @@ pub enum Expression {
     Boolean(Boolean),
     StringLiteral(StringLiteral),
     ArrayLiteral(ArrayLiteral),
+    HashLiteral(HashLiteral),
     PrefixExpression(PrefixExpression),
     InfixExpression(InfixExpression),
     IfExpression(IfExpression),
@@ -59,6 +59,7 @@ impl MonkeyNode for Expression {
             Self::Boolean(node) => node.token.literal.clone(),
             Self::StringLiteral(node) => node.token.literal.clone(),
             Self::ArrayLiteral(node) => node.token.literal.clone(),
+            Self::HashLiteral(node) => node.token.literal.clone(),
             Self::PrefixExpression(node) => node.token.literal.clone(),
             Self::InfixExpression(node) => node.token.literal.clone(),
             Self::IfExpression(node) => node.token.literal.clone(),
@@ -76,6 +77,7 @@ impl MonkeyNode for Expression {
             Self::Boolean(node) => node.string(),
             Self::StringLiteral(node) => node.string(),
             Self::ArrayLiteral(node) => node.string(),
+            Self::HashLiteral(node) => node.string(),
             Self::PrefixExpression(node) => node.string(),
             Self::InfixExpression(node) => node.string(),
             Self::IfExpression(node) => node.string(),
@@ -312,6 +314,28 @@ impl MonkeyNode for ArrayLiteral {
             .collect::<Vec<_>>()
             .join(", ");
         format!("[{elements}]")
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct HashLiteral {
+    pub token: Token,
+    pub pairs: Vec<(Expression, Expression)>,
+}
+
+impl MonkeyNode for HashLiteral {
+    fn token_literal(&self) -> String {
+        self.token.literal.clone()
+    }
+
+    fn string(&self) -> String {
+        let pairs = self
+            .pairs
+            .iter()
+            .map(|(k, v)| format!("{}: {}", k.string(), v.string()))
+            .collect::<Vec<_>>()
+            .join(", ");
+        format!("{{{pairs}}}")
     }
 }
 

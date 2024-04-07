@@ -122,6 +122,7 @@ impl Lexer {
                 }
             }
             ';' => TokenType::Semicolon,
+            ':' => TokenType::Colon,
             ',' => TokenType::Comma,
             '<' => TokenType::Lt,
             '>' => TokenType::Gt,
@@ -274,7 +275,7 @@ let result = add(five, ten);
 
     #[test]
     fn more_tokens() {
-        let input = "!-/*5;
+        let input = r#"!-/*5;
 5 < 10 > 5;
 
 if (5 < 10) {
@@ -282,7 +283,8 @@ if (5 < 10) {
 } else {
     return false;
 }
-[1, 2];";
+[1, 2];
+{"foo": "bar"}"#;
         let tests = [
             Token::new(TokenType::Bang, "!".to_string()),
             Token::new(TokenType::Minus, "-".to_string()),
@@ -319,6 +321,11 @@ if (5 < 10) {
             Token::new(TokenType::Int, "2".to_string()),
             Token::new(TokenType::CloseBracket, "]".to_string()),
             Token::new(TokenType::Semicolon, ";".to_string()),
+            Token::new(TokenType::OpenBrace, "{".to_string()),
+            Token::new(TokenType::String, "foo".to_string()),
+            Token::new(TokenType::Colon, ":".to_string()),
+            Token::new(TokenType::String, "bar".to_string()),
+            Token::new(TokenType::CloseBrace, "}".to_string()),
         ];
 
         let mut l = Lexer::new(input.to_string());

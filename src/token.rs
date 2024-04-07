@@ -23,6 +23,7 @@ pub enum TokenType {
     // Delimiters
     Comma,
     Semicolon,
+    Colon,
 
     OpenParen,
     CloseParen,
@@ -41,7 +42,7 @@ pub enum TokenType {
     Return,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Token {
     pub toktype: TokenType,
     pub literal: String,

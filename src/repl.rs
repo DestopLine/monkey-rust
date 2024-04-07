@@ -33,7 +33,7 @@ pub fn start() {
         }
 
         match eval(&program, &env) {
-            Ok(evaluated) => println!("{}", evaluated.inspect()),
+            Ok(evaluated) => println!("{evaluated}"),
             Err(error) => println!("{}", error.inspect()),
         }
     }

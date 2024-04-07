@@ -331,6 +331,37 @@ impl Parser {
                     None => return ast::Expression::None,
                 },
             }),
+            TokenType::OpenBrace => {
+                let token = self.curr_token.clone();
+                let mut pairs = Vec::new();
+
+                while !self.peek_token_is(&TokenType::CloseBrace) {
+                    self.next_token();
+                    let key = self.parse_expression(Precedence::Lowest);
+
+                    if !self.expect_peek(TokenType::Colon) {
+                        return ast::Expression::None;
+                    }
+
+                    self.next_token();
+                    let value = self.parse_expression(Precedence::Lowest);
+
+                    pairs.push((key, value));
+                    
+                    if !self.peek_token_is(&TokenType::CloseBrace) && !self.expect_peek(TokenType::Comma) {
+                        return ast::Expression::None;
+                    }
+                }
+
+                if !self.expect_peek(TokenType::CloseBrace) {
+                    return ast::Expression::None;
+                }
+
+                ast::Expression::HashLiteral(ast::HashLiteral {
+                    token,
+                    pairs,
+                })
+            },
             _ => ast::Expression::None,
         }
     }
@@ -455,6 +486,8 @@ impl Parser {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
+
     use super::*;
     use crate::ast::MonkeyNode;
     use crate::ast::Statement;
@@ -1100,5 +1133,108 @@ let 838383;
 
         test_identifier(&index_expr.left, "myArray");
         test_infix_expression(&index_expr.index, Literal::Int(1), "+", Literal::Int(1));
+    }
+
+    #[test]
+    fn parsing_hash_literals_string_keys() {
+        let input = r#" {"one": 1, "two": 2, "three": 3} "#.to_string();
+
+        let lexer = Lexer::new(input);
+        let mut parser = Parser::new(lexer);
+        let program = parser.parse_program();
+        check_parser_errors(&parser);
+
+        assert_eq!(program.statements.len(), 1);
+
+        let ast::Statement::ExpressionStatement(stmt) = &program.statements[0] else {
+            panic!(
+                "Expected ExpressionStatement, got {:?} instead",
+                program.statements[0]
+            );
+        };
+
+        let ast::Expression::HashLiteral(hash) = &stmt.expression else {
+            panic!("Expected HashLiteral, got {stmt:?} instead")
+        };
+
+        assert_eq!(hash.pairs.len(), 3);
+
+        let expected = HashMap::from([
+            ("one", 1),
+            ("two", 2),
+            ("three", 3),
+        ]);
+
+        for (k, v) in &hash.pairs {
+            let ast::Expression::StringLiteral(literal) = k else {
+                panic!("Expected key to be StringLiteral, got {k:?} instead");
+            };
+            let expected_value = expected[literal.string().as_str()];
+            test_integer_literal(&v, expected_value);
+        }
+    }
+
+    #[test]
+    fn parsing_empty_hash_literal() {
+        let input = "{}".to_string();
+
+        let lexer = Lexer::new(input);
+        let mut parser = Parser::new(lexer);
+        let program = parser.parse_program();
+        check_parser_errors(&parser);
+
+        assert_eq!(program.statements.len(), 1);
+
+        let ast::Statement::ExpressionStatement(stmt) = &program.statements[0] else {
+            panic!(
+                "Expected ExpressionStatement, got {:?} instead",
+                program.statements[0]
+            );
+        };
+
+        let ast::Expression::HashLiteral(hash) = &stmt.expression else {
+            panic!("Expected HashLiteral, got {stmt:?} instead")
+        };
+
+        assert_eq!(hash.pairs.len(), 0);
+    }
+
+    #[test]
+    fn parsing_hash_literals_with_expressions() {
+        let input = r#" {"one": 0 + 1, "two": 10 - 8, "three": 15 / 5} "#.to_string();
+
+        let lexer = Lexer::new(input);
+        let mut parser = Parser::new(lexer);
+        let program = parser.parse_program();
+        check_parser_errors(&parser);
+
+        assert_eq!(program.statements.len(), 1);
+
+        let ast::Statement::ExpressionStatement(stmt) = &program.statements[0] else {
+            panic!(
+                "Expected ExpressionStatement, got {:?} instead",
+                program.statements[0]
+            );
+        };
+
+        let ast::Expression::HashLiteral(hash) = &stmt.expression else {
+            panic!("Expected HashLiteral, got {stmt:?} instead")
+        };
+
+        assert_eq!(hash.pairs.len(), 3);
+
+        let expected = HashMap::from([
+            ("one", (0, "+", 1)),
+            ("two", (10, "-", 8)),
+            ("three", (15, "/", 5)),
+        ]);
+
+        for (k, v) in &hash.pairs {
+            let ast::Expression::StringLiteral(literal) = k else {
+                panic!("Expected key to be StringLiteral, got {k:?} instead");
+            };
+            let (left, operator, right) = expected[literal.string().as_str()];
+            test_infix_expression(&v, Literal::Int(left), operator, Literal::Int(right));
+        }
     }
 }

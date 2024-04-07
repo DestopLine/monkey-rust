@@ -1,4 +1,4 @@
-use std::{cell::RefCell, rc::Rc, str::FromStr};
+use std::{cell::RefCell, collections::HashMap, rc::Rc, str::FromStr};
 
 use crate::{
     ast,
@@ -102,14 +102,20 @@ fn eval_expression(expression: &ast::Expression, env: &Env) -> Result<Rc<Object>
         ast::Expression::IndexExpression(idx) => {
             let left = eval_expression(&idx.left, env)?;
             let index = eval_expression(&idx.index, env)?;
-            let (Object::Array(array), Object::Integer(index)) = (&*left, &*index) else {
-                return Err(new_error!("Index operator not supported: {left:?}"));
-            };
-            Ok(match array.get(*index as usize) {
-                Some(obj) => Rc::clone(obj),
-                None => env.borrow().get_singleton(None),
-            })
+            match (&*left, &*index) {
+                (Object::Array(array), Object::Integer(index)) => Ok(Object::filter_option(array.get(*index as usize), env)),
+                (Object::Hash(object::HashObj(map)), _) => {
+                    if !index.is_hashable() {
+                        Err(new_error!("Unusable as hash key: {index}"))
+                    } else {
+                        Ok(Object::filter_option(map.get(&index), env))
+                    }
+                },
+                _ => Err(new_error!("Index operator not supported: {left}")),
+            }
+            
         }
+        ast::Expression::HashLiteral(hash) => eval_hash_literal(hash, env),
         _ => unimplemented!(),
     }
 }
@@ -127,7 +133,7 @@ fn apply_function(obj: &Rc<Object>, args: Vec<Rc<Object>>, env: &Env) -> Result<
             }
         }
         Object::Builtin(builtin) => Ok(Object::filter_singleton((builtin.func)(args)?, env)),
-        o @ _ => Err(new_error!("Not a function: {o:?}")),
+        o @ _ => Err(new_error!("Not a function: {o}")),
     }
 }
 
@@ -165,9 +171,9 @@ fn eval_prefix_expression(
         })),
         "-" => match **right {
             Object::Integer(n) => Ok(Rc::new(Object::Integer(-n))),
-            _ => Err(new_error!("Unknown operator: -{right:?}")),
+            _ => Err(new_error!("Unknown operator: -{right}")),
         },
-        _ => Err(new_error!("Unknown operator: {operator}{right:?}")),
+        _ => Err(new_error!("Unknown operator: {operator}{right}")),
     }
 }
 
@@ -185,16 +191,16 @@ fn eval_infix_expression(
             "+" => Ok(Rc::new(Object::String(format!("{l}{r}")))),
             "==" => Ok(env.borrow().get_singleton(Some(l == r))),
             "!=" => Ok(env.borrow().get_singleton(Some(l != r))),
-            _ => Err(new_error!("Unknown operator: {l:?} {operator} {r:?}")),
+            _ => Err(new_error!("Unknown operator: {left} {operator} {right}")),
         },
         (l, r) => {
             if std::mem::discriminant(l) != std::mem::discriminant(r) {
-                return Err(new_error!("Type mismatch: {l:?} {operator} {r:?}"));
+                return Err(new_error!("Type mismatch: {l} {operator} {r}"));
             }
             match operator.as_str() {
                 "==" => Ok(env.borrow().get_singleton(Some(l == r))),
                 "!=" => Ok(env.borrow().get_singleton(Some(l != r))),
-                _ => Err(new_error!("Unknown operator: {l:?} {operator} {r:?}")),
+                _ => Err(new_error!("Unknown operator: {l} {operator} {r}")),
             }
         }
     }
@@ -219,6 +225,24 @@ fn eval_integer_infix_expression(
     }
 }
 
+fn eval_hash_literal(hash: &ast::HashLiteral, env: &Env) -> Result<Rc<Object>, Error> {
+    let mut pairs = HashMap::new();
+
+    for (key_node, value_node) in &hash.pairs {
+        let key = eval_expression(&key_node, env)?;
+
+        if !key.is_hashable() {
+            return Err(new_error!("Unusable as hash key: {key}"));
+        }
+
+        let value = eval_expression(&value_node, env)?;
+
+        pairs.insert(key, value);
+    }
+
+    Ok(Rc::new(Object::Hash(object::HashObj(pairs))))
+}
+
 fn is_truthy(obj: Rc<Object>) -> bool {
     match *obj {
         Object::Null => false,
@@ -230,7 +254,11 @@ fn is_truthy(obj: Rc<Object>) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
+
     use crate::{ast::MonkeyNode, lexer::Lexer, parser::Parser};
+
+    use self::object::HashObj;
 
     use super::*;
 
@@ -372,20 +400,20 @@ mod tests {
     #[test]
     fn error_handling() {
         let tests = [
-            ("5 + true;", "Type mismatch: Integer(5) + Boolean(true)"),
-            ("5 + true; 5;", "Type mismatch: Integer(5) + Boolean(true)"),
-            ("-true", "Unknown operator: -Boolean(true)"),
+            ("5 + true;", "Type mismatch: 5 + true"),
+            ("5 + true; 5;", "Type mismatch: 5 + true"),
+            ("-true", "Unknown operator: -true"),
             (
                 "true + false;",
-                "Unknown operator: Boolean(true) + Boolean(false)",
+                "Unknown operator: true + false",
             ),
             (
                 "5; true + false; 5",
-                "Unknown operator: Boolean(true) + Boolean(false)",
+                "Unknown operator: true + false",
             ),
             (
                 "if (10 > 1) { true + false; }",
-                "Unknown operator: Boolean(true) + Boolean(false)",
+                "Unknown operator: true + false",
             ),
             (
                 "
@@ -396,12 +424,16 @@ mod tests {
                         return 1;
                     }
                 ",
-                "Unknown operator: Boolean(true) + Boolean(false)",
+                "Unknown operator: true + false",
             ),
             ("foobar", "Identifier not found: foobar"),
             (
                 r#" "Hello" - "World" "#,
                 r#"Unknown operator: "Hello" - "World""#,
+            ),
+            (
+                r#"{"name": "Monkey"}[fn(x) { x }]"#,
+                "Unusable as hash key: fn(x)",
             ),
         ];
 
@@ -598,6 +630,85 @@ foo(0);
             match expected {
                 Some(v) => test_integer_object(evaluated, v),
                 None => test_null_object(evaluated),
+            }
+        }
+    }
+
+    #[test]
+    fn hash_literals() {
+        let input = r#" let two = "two";
+        {
+            "one": 10 - 9,
+            two: 1 + 1,
+            "thr" + "ee": 6 / 2,
+            4: 4,
+            true: 5,
+            false: 6
+        }
+        "#.to_string();
+
+        let evaluated = test_eval(input).unwrap();
+        let Object::Hash(HashObj(result)) = &*evaluated else {
+            panic!("Expected Hash, got {evaluated:?} instead");
+        };
+
+        let expected = HashMap::from([
+            (Object::String(String::from("one")), 1),
+            (Object::String(String::from("two")), 2),
+            (Object::String(String::from("three")), 3),
+            (Object::Integer(4), 4),
+            (Object::Boolean(true), 5),
+            (Object::Boolean(false), 6),
+        ]);
+
+        assert_eq!(result.len(), expected.len());
+
+        for (expected_key, expected_value) in expected {
+            let Some(pair) = result.get(&expected_key) else {
+                panic!("Hash has wrong number of pairs, got {}", result.len());
+            };
+            test_integer_object(pair.clone(), expected_value);
+        }
+    }
+
+    #[test]
+    fn hash_index_expressions() {
+        let tests = [
+            (
+                r#"{"foo": 5}["foo"]"#,
+                Some(5),
+            ),
+            (
+                r#"{"foo": 5}["bar"]"#,
+                None,
+            ),
+            (
+                r#"let key = "foo"; {"foo": 5}[key]"#,
+                Some(5),
+            ),
+            (
+                r#"{}["foo"]"#,
+                None,
+            ),
+            (
+                r#"{5: 5}[5]"#,
+                Some(5),
+            ),
+            (
+                r#"{true: 5}[true]"#,
+                Some(5),
+            ),
+            (
+                r#"{false: 5}[false]"#,
+                Some(5),
+            ),
+        ];
+
+        for (input, expected) in tests {
+            let evaluated = test_eval(input.to_string()).unwrap();
+            match expected {
+                Some(n) => test_integer_object(evaluated, n),
+                None => test_null_object(evaluated)
             }
         }
     }
