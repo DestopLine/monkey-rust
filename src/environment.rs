@@ -4,6 +4,10 @@ use crate::object::Object;
 
 pub type Env = Rc<RefCell<Environment>>;
 
+pub fn new_env() -> Env {
+    Rc::new(RefCell::new(Environment::new()))
+}
+
 #[derive(Debug, Clone)]
 pub struct Environment {
     store: HashMap<String, Rc<Object>>,

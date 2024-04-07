@@ -1,15 +1,11 @@
-use std::{
-    cell::RefCell,
-    io::{stdin, stdout, Write},
-    rc::Rc,
-};
+use std::io::{stdin, stdout, Write};
 
-use crate::{environment::Environment, evaluator::eval, lexer::Lexer, parser::Parser};
+use crate::{environment::new_env, evaluator::eval, lexer::Lexer, parser::Parser};
 
 static PROMPT: &str = "> ";
 
 pub fn start() {
-    let env = Rc::new(RefCell::new(Environment::new()));
+    let env = new_env();
 
     loop {
         let mut input = String::new();
