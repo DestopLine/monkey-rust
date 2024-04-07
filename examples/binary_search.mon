@@ -1,0 +1,41 @@
+let main = fn() {
+	print();
+	let array = [-120, -55, -9, 57, 99, 200, 243];
+	print("Array to search: ", array)
+	print("expecting -1; result: ", binary_search(array, -200));
+	print("expecting 0; result: ", binary_search(array, -120));
+	print("expecting 1; result: ", binary_search(array, -55));
+	print("expecting 2; result: ", binary_search(array, -9));
+	print("expecting 3; result: ", binary_search(array, 57));
+	print("expecting 4; result: ", binary_search(array, 99));
+	print("expecting 5; result: ", binary_search(array, 200));
+	print("expecting 6; result: ", binary_search(array, 243));
+	print("expecting -1; result: ", binary_search(array, 500));
+}
+
+let binary_search = fn(array, target) {
+	let recurse = fn(l, r) {
+		let m = (r - l) / 2 + l;
+
+		if (l > r) {
+			return -1;
+		}
+
+		let v = array[m];
+
+		if (v == target) {
+			return m;
+		}
+
+		if (v < target) {
+			recurse(m + 1, r)
+		} else {
+			recurse(l, m - 1)
+		}
+	}
+	let l = 0;
+	let r = len(array) - 1;
+	recurse(l, r)
+}
+
+main()

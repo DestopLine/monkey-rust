@@ -1,0 +1,18 @@
+let main = fn() {
+	let arr = [10, 20, 30, 40, 50];
+	print("array: ", arr);
+	print("sum: ", reduce(arr, 0, fn(acc, prev) { acc + prev }));
+}
+
+let reduce = fn(arr, init, func) {
+	let recurse = fn(pending, acc, i) {
+		if (len(pending) == 0) {
+			return acc;
+		}
+		let acc = func(acc, first(pending), i, arr);
+		recurse(rest(pending), acc, i + 1)
+	}
+	recurse(arr, init, 0)
+}
+
+main()

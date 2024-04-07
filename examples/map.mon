@@ -1,0 +1,20 @@
+let main = fn() {
+	let arr = [10, 20, 30, 40, 50];
+	print("array: ", arr);
+	print("doubled: ", map(arr, fn(x) { x * 2 }));
+	print("times idx: ", map(arr, fn(x, i) { x * i }));
+	print("bidimensional: ", map(arr, fn(_, _, a) { a }));
+}
+
+let map = fn(arr, func) {
+	let recurse = fn(done, pending, i) {
+		if (len(pending) == 0) {
+			return done;
+		}
+		let value = func(first(pending), i, arr);
+		recurse(push(done, value), rest(pending), i + 1)
+	}
+	recurse([], arr, 0)
+}
+
+main()

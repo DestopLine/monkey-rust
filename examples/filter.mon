@@ -1,0 +1,27 @@
+let main = fn() {
+	let arr = [10, 11, 85, 66, 100, 169];
+	print("array: ", arr);
+	print("even: ", filter(arr, is_even));
+	print("triple digit: ", filter(arr, fn(x) { x / 100 > 0 }));
+	print("2 steps: ", filter(arr, fn(x, i) { is_even(i) }))
+}
+
+let filter = fn(arr, func) {
+	let recurse = fn(filtered, pending, i) {
+		if (len(pending) == 0) {
+			return filtered;
+		}
+		let value = first(pending)
+		if (func(value, i, arr)) {
+			let filtered = push(filtered, value);
+		}
+		recurse(filtered, rest(pending), i + 1)
+	}
+	recurse([], arr, 0)
+}
+
+let is_even = fn(num) {
+	num / 2 == (num + 1) / 2
+}
+
+main()
