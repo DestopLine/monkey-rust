@@ -1,7 +1,6 @@
 use crate::token::Token;
 
 pub trait MonkeyNode {
-    fn token_literal(&self) -> String;
     fn string(&self) -> String;
 }
 
@@ -15,15 +14,6 @@ pub enum Statement {
 }
 
 impl MonkeyNode for Statement {
-    fn token_literal(&self) -> String {
-        match self {
-            Self::Let(node) => node.token.literal.clone(),
-            Self::Return(node) => node.token.literal.clone(),
-            Self::ExpressionStatement(node) => node.token.literal.clone(),
-            Self::BlockStatement(node) => node.token.literal.clone(),
-        }
-    }
-
     fn string(&self) -> String {
         match self {
             Self::Let(node) => node.string(),
@@ -52,24 +42,6 @@ pub enum Expression {
 }
 
 impl MonkeyNode for Expression {
-    fn token_literal(&self) -> String {
-        match self {
-            Self::Identifier(node) => node.token.literal.clone(),
-            Self::IntegerLiteral(node) => node.token.literal.clone(),
-            Self::Boolean(node) => node.token.literal.clone(),
-            Self::StringLiteral(node) => node.token.literal.clone(),
-            Self::ArrayLiteral(node) => node.token.literal.clone(),
-            Self::HashLiteral(node) => node.token.literal.clone(),
-            Self::PrefixExpression(node) => node.token.literal.clone(),
-            Self::InfixExpression(node) => node.token.literal.clone(),
-            Self::IfExpression(node) => node.token.literal.clone(),
-            Self::FunctionLiteral(node) => node.token.literal.clone(),
-            Self::CallExpression(node) => node.token.literal.clone(),
-            Self::IndexExpression(node) => node.token.literal.clone(),
-            Self::None => String::new(),
-        }
-    }
-
     fn string(&self) -> String {
         match self {
             Self::Identifier(node) => node.string(),
@@ -103,14 +75,6 @@ impl Program {
 }
 
 impl MonkeyNode for Program {
-    fn token_literal(&self) -> String {
-        if self.statements.len() > 0 {
-            self.statements[0].token_literal()
-        } else {
-            String::new()
-        }
-    }
-
     fn string(&self) -> String {
         let mut out = String::new();
 
@@ -130,14 +94,10 @@ pub struct LetStatement {
 }
 
 impl MonkeyNode for LetStatement {
-    fn token_literal(&self) -> String {
-        self.token.literal.clone()
-    }
-
     fn string(&self) -> String {
         let mut out = String::new();
 
-        out.push_str(&(self.token_literal() + " "));
+        out.push_str(&(self.token.to_string() + " "));
         out.push_str(&self.name.string());
         out.push_str(" = ");
 
@@ -157,14 +117,10 @@ pub struct ReturnStatement {
 }
 
 impl MonkeyNode for ReturnStatement {
-    fn token_literal(&self) -> String {
-        self.token.literal.clone()
-    }
-
     fn string(&self) -> String {
         let mut out = String::new();
 
-        out.push_str(&(self.token_literal() + " "));
+        out.push_str(&(self.token.to_string() + " "));
 
         if !matches!(self.return_value, Expression::None) {
             out.push_str(&self.return_value.string());
@@ -182,10 +138,6 @@ pub struct ExpressionStatement {
 }
 
 impl MonkeyNode for ExpressionStatement {
-    fn token_literal(&self) -> String {
-        self.token.literal.clone()
-    }
-
     fn string(&self) -> String {
         self.expression.string()
     }
@@ -198,10 +150,6 @@ pub struct Identifier {
 }
 
 impl MonkeyNode for Identifier {
-    fn token_literal(&self) -> String {
-        self.token.literal.clone()
-    }
-
     fn string(&self) -> String {
         self.value.clone()
     }
@@ -214,12 +162,8 @@ pub struct IntegerLiteral {
 }
 
 impl MonkeyNode for IntegerLiteral {
-    fn token_literal(&self) -> String {
-        self.token.literal.clone()
-    }
-
     fn string(&self) -> String {
-        self.token_literal()
+        self.token.to_string()
     }
 }
 
@@ -231,10 +175,6 @@ pub struct PrefixExpression {
 }
 
 impl MonkeyNode for PrefixExpression {
-    fn token_literal(&self) -> String {
-        self.token.literal.clone()
-    }
-
     fn string(&self) -> String {
         format!("({}{})", self.operator, self.right.string())
     }
@@ -249,10 +189,6 @@ pub struct InfixExpression {
 }
 
 impl MonkeyNode for InfixExpression {
-    fn token_literal(&self) -> String {
-        self.token.literal.clone()
-    }
-
     fn string(&self) -> String {
         format!(
             "({} {} {})",
@@ -270,12 +206,8 @@ pub struct Boolean {
 }
 
 impl MonkeyNode for Boolean {
-    fn token_literal(&self) -> String {
-        self.token.literal.clone()
-    }
-
     fn string(&self) -> String {
-        self.token_literal()
+        self.token.to_string()
     }
 }
 
@@ -286,12 +218,8 @@ pub struct StringLiteral {
 }
 
 impl MonkeyNode for StringLiteral {
-    fn token_literal(&self) -> String {
-        self.token.literal.clone()
-    }
-
     fn string(&self) -> String {
-        self.token_literal()
+        self.token.to_string()
     }
 }
 
@@ -302,10 +230,6 @@ pub struct ArrayLiteral {
 }
 
 impl MonkeyNode for ArrayLiteral {
-    fn token_literal(&self) -> String {
-        self.token.literal.clone()
-    }
-
     fn string(&self) -> String {
         let elements = self
             .elements
@@ -324,10 +248,6 @@ pub struct HashLiteral {
 }
 
 impl MonkeyNode for HashLiteral {
-    fn token_literal(&self) -> String {
-        self.token.literal.clone()
-    }
-
     fn string(&self) -> String {
         let pairs = self
             .pairs
@@ -346,10 +266,6 @@ pub struct BlockStatement {
 }
 
 impl MonkeyNode for BlockStatement {
-    fn token_literal(&self) -> String {
-        self.token.literal.clone()
-    }
-
     fn string(&self) -> String {
         self.statements.iter().map(|s| s.string()).collect()
     }
@@ -364,10 +280,6 @@ pub struct IfExpression {
 }
 
 impl MonkeyNode for IfExpression {
-    fn token_literal(&self) -> String {
-        self.token.literal.clone()
-    }
-
     fn string(&self) -> String {
         format!(
             "if {} {} {}",
@@ -390,16 +302,12 @@ pub struct FunctionLiteral {
 }
 
 impl MonkeyNode for FunctionLiteral {
-    fn token_literal(&self) -> String {
-        self.token.literal.clone()
-    }
-
     fn string(&self) -> String {
         let params: Vec<_> = self.parameters.iter().map(|p| p.string()).collect();
 
         format!(
             "{}({}) {}",
-            self.token_literal(),
+            self.token.to_string(),
             params.join(", "),
             self.body.string(),
         )
@@ -414,10 +322,6 @@ pub struct CallExpression {
 }
 
 impl MonkeyNode for CallExpression {
-    fn token_literal(&self) -> String {
-        self.token.literal.clone()
-    }
-
     fn string(&self) -> String {
         let args: Vec<_> = self.arguments.iter().map(|p| p.string()).collect();
 
@@ -433,10 +337,6 @@ pub struct IndexExpression {
 }
 
 impl MonkeyNode for IndexExpression {
-    fn token_literal(&self) -> String {
-        self.token.literal.clone()
-    }
-
     fn string(&self) -> String {
         format!("({}[{}])", self.left.string(), self.index.string())
     }
@@ -445,28 +345,19 @@ impl MonkeyNode for IndexExpression {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::token::TokenType;
+    use crate::token::TokenKind;
 
     #[test]
     fn string() {
         let program = Program {
             statements: vec![Statement::Let(LetStatement {
-                token: Token {
-                    toktype: TokenType::Let,
-                    literal: "let".to_string(),
-                },
+                token: Token::new(TokenKind::Let, 0, 3),
                 name: Identifier {
-                    token: Token {
-                        toktype: TokenType::Ident,
-                        literal: "myVar".to_string(),
-                    },
+                    token: Token::new(TokenKind::Ident(String::from("myVar")), 4, 9),
                     value: "myVar".to_string(),
                 },
                 value: Expression::Identifier(Identifier {
-                    token: Token {
-                        toktype: TokenType::Ident,
-                        literal: "anotherVar".to_string(),
-                    },
+                    token: Token::new(TokenKind::Ident(String::from("anotherVar")), 12, 22),
                     value: "anotherVar".to_string(),
                 }),
             })],

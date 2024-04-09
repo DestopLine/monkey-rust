@@ -20,7 +20,7 @@ fn main() {
 
     match std::fs::read_to_string(path) {
         Ok(src) => {
-            let lexer = lexer::Lexer::new(src);
+            let lexer = lexer::Lexer::new(&src);
             let mut parser = parser::Parser::new(lexer);
             let program = parser.parse_program();
 

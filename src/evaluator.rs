@@ -283,12 +283,12 @@ mod tests {
         ];
 
         for (input, expected) in tests {
-            let evaluated = test_eval(input.to_string()).unwrap();
+            let evaluated = test_eval(input).unwrap();
             test_integer_object(evaluated, expected);
         }
     }
 
-    fn test_eval(input: String) -> Result<Rc<Object>, Error> {
+    fn test_eval(input: &str) -> Result<Rc<Object>, Error> {
         let lexer = Lexer::new(input);
         let mut parser = Parser::new(lexer);
         let program = parser.parse_program();
@@ -325,7 +325,7 @@ mod tests {
         ];
 
         for (input, expected) in tests {
-            let evaluated = test_eval(input.to_string()).unwrap();
+            let evaluated = test_eval(input).unwrap();
             test_boolean_object(evaluated, expected);
         }
     }
@@ -346,7 +346,7 @@ mod tests {
         ];
 
         for (input, expected) in tests {
-            let evaluated = test_eval(input.to_string()).unwrap();
+            let evaluated = test_eval(input).unwrap();
             test_boolean_object(evaluated, expected);
         }
     }
@@ -370,7 +370,7 @@ mod tests {
         ];
 
         for (input, expected) in tests {
-            let evaluated = test_eval(input.to_string()).unwrap();
+            let evaluated = test_eval(input).unwrap();
             match expected {
                 Value::Int(i) => test_integer_object(evaluated, i),
                 Value::Null => test_null_object(evaluated),
@@ -392,7 +392,7 @@ mod tests {
         ];
 
         for (input, expected) in tests {
-            let evaluated = test_eval(input.to_string()).unwrap();
+            let evaluated = test_eval(input).unwrap();
             test_integer_object(evaluated, expected);
         }
     }
@@ -438,7 +438,7 @@ mod tests {
         ];
 
         for (input, expected) in tests {
-            let evaluated = test_eval(input.to_string());
+            let evaluated = test_eval(input);
 
             let Err(Error { message }) = evaluated else {
                 panic!("Expected Error, got {evaluated:?} instead");
@@ -458,7 +458,7 @@ mod tests {
         ];
 
         for (input, expected) in tests {
-            let evaluated = test_eval(input.to_string()).unwrap();
+            let evaluated = test_eval(input).unwrap();
             test_integer_object(evaluated, expected);
         }
     }
@@ -467,7 +467,7 @@ mod tests {
     fn function_object() {
         let input = "fn(x) { x + 2; };";
 
-        let evaluated = test_eval(input.to_string()).unwrap();
+        let evaluated = test_eval(input).unwrap();
         let Object::Function(func) = &*evaluated else {
             panic!("Expected Function, got {evaluated:?}");
         };
@@ -489,23 +489,22 @@ mod tests {
         ];
 
         for (input, expected) in tests {
-            let evaluated = test_eval(input.to_string()).unwrap();
+            let evaluated = test_eval(input).unwrap();
             test_integer_object(evaluated, expected);
         }
     }
 
     #[test]
     fn closures() {
-        let input = String::from(
-            "
+        let input = 
+"
 let newAdder = fn(x) {
     fn(y) { x + y };
 };
 
 let addTwo = newAdder(2);
 addTwo(2);
-",
-        );
+";
         let evaluated = test_eval(input).unwrap();
         test_integer_object(evaluated, 4);
     }
@@ -514,8 +513,8 @@ addTwo(2);
     #[ignore = "too much noise from the `impl Drop`s"]
     fn garbage_collector() {
         //  NOTE: Use --ignored --show-output to test this one
-        let input = String::from(
-            "
+        let input =
+"
 let foo = fn(x) {
     let bar = 69;
     if (x < 2) {
@@ -523,8 +522,7 @@ let foo = fn(x) {
     }
 }
 foo(0);
-",
-        );
+";
 
         // impl Drop for Object {
         //     fn drop(&mut self) {
@@ -544,7 +542,7 @@ foo(0);
 
     #[test]
     fn string_literal() {
-        let input = r#" "Hello World!" "#.to_string();
+        let input = r#" "Hello World!" "#;
 
         let evaluated = test_eval(input).unwrap();
 
@@ -553,7 +551,7 @@ foo(0);
 
     #[test]
     fn string_concatenation() {
-        let input = r#" "Hello" + " " + "World!" "#.to_string();
+        let input = r#" "Hello" + " " + "World!" "#;
 
         let evaluated = test_eval(input).unwrap();
 
@@ -577,7 +575,7 @@ foo(0);
         ];
 
         for (input, expected) in tests {
-            let evaluated = test_eval(input.to_string());
+            let evaluated = test_eval(input);
 
             match (evaluated, expected) {
                 (Ok(obj), Ok(i)) => test_integer_object(obj, i),
@@ -590,7 +588,7 @@ foo(0);
 
     #[test]
     fn array_literals() {
-        let input = "[1, 2 * 2, 3 + 3]".to_string();
+        let input = "[1, 2 * 2, 3 + 3]";
 
         let evaluated = test_eval(input).unwrap();
 
@@ -626,7 +624,7 @@ foo(0);
         ];
 
         for (input, expected) in tests {
-            let evaluated = test_eval(input.to_string()).unwrap();
+            let evaluated = test_eval(input).unwrap();
             match expected {
                 Some(v) => test_integer_object(evaluated, v),
                 None => test_null_object(evaluated),
@@ -645,7 +643,7 @@ foo(0);
             true: 5,
             false: 6
         }
-        "#.to_string();
+        "#;
 
         let evaluated = test_eval(input).unwrap();
         let Object::Hash(HashObj(result)) = &*evaluated else {
@@ -705,7 +703,7 @@ foo(0);
         ];
 
         for (input, expected) in tests {
-            let evaluated = test_eval(input.to_string()).unwrap();
+            let evaluated = test_eval(input).unwrap();
             match expected {
                 Some(n) => test_integer_object(evaluated, n),
                 None => test_null_object(evaluated)

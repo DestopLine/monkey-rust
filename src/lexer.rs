@@ -1,160 +1,175 @@
-use crate::token::{lookup_ident, Token, TokenType};
+use std::{
+    iter::{Enumerate, Peekable},
+    str::Chars,
+};
 
-fn is_letter(ch: &char) -> bool {
-    matches!(ch, 'a'..='z' | 'A'..='Z' | '_')
+use crate::token::{lookup_ident, Token, TokenKind};
+
+macro_rules! letter {
+    () => {
+        'a'..='z' | 'A'..='Z' | '_'
+    };
 }
 
-fn is_digit(ch: &char) -> bool {
-    matches!(ch, '0'..='9')
+macro_rules! digit {
+    () => {
+        '0'..='9'
+    };
 }
 
-pub struct Lexer {
-    input: String,
-    position: usize,
-    read_position: usize,
+macro_rules! whitespace {
+    () => {
+        ' ' | '\t' | '\n' | '\r'
+    };
+}
+
+struct Source<'a> {
+    it: Peekable<Enumerate<Chars<'a>>>,
+    pos: usize,
     ch: char,
 }
 
-impl Lexer {
-    pub fn new(input: String) -> Self {
-        let mut lexer = Self {
-            input,
-            position: 0,
-            read_position: 1,
+impl<'a> Source<'a> {
+    fn new(src: &'a str) -> Self {
+        Self {
+            it: src.chars().enumerate().peekable().into_iter(),
+            pos: 0,
             ch: '\0',
-        };
-        lexer.ch = lexer.input.chars().next().unwrap();
-        lexer
-    }
-
-    pub fn read_char(&mut self) {
-        self.ch = if self.read_position >= self.input.len() {
-            '\0'
-        } else {
-            self.input.chars().nth(self.read_position).unwrap()
-        };
-        self.position = self.read_position;
-        self.read_position += 1;
-    }
-
-    pub fn read_identifier(&mut self) -> String {
-        let position = self.position;
-        while is_letter(&self.ch) {
-            self.read_char();
         }
-        self.input[position..self.position].to_string()
+    }
+
+    fn pos(&self) -> usize {
+        self.pos
+    }
+
+    fn ch(&self) -> char {
+        self.ch
+    }
+
+    fn peek_ch(&mut self) -> Option<char> {
+        let (_, ch) = self.it.peek()?;
+        Some(*ch)
+    }
+}
+
+impl<'a> Iterator for Source<'a> {
+    type Item = (usize, char);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let next = self.it.next()?;
+        (self.pos, self.ch) = next;
+        Some(next)
+    }
+}
+
+pub struct Lexer<'a> {
+    input: &'a str,
+    src: Source<'a>,
+}
+
+impl<'a> Lexer<'a> {
+    pub fn new(input: &'a str) -> Self {
+        Self {
+            input,
+            src: Source::new(input),
+        }
+    }
+
+    fn read_identifier(&mut self) -> String {
+        let mut ident = String::from(self.src.ch());
+        while let Some(ch @ letter!()) = self.src.peek_ch() {
+            ident.push(ch);
+            self.src.next();
+        }
+        ident
     }
 
     fn read_number(&mut self) -> String {
-        let position = self.position;
-        while is_digit(&self.ch) {
-            self.read_char();
+        let mut num = String::from(self.src.ch());
+        while let Some(ch @ digit!()) = self.src.peek_ch() {
+            num.push(ch);
+            self.src.next();
         }
-        self.input[position..self.position].to_string()
+        num
     }
 
     fn read_string(&mut self) -> String {
-        let mut out = String::new();
+        let mut string = String::new();
         loop {
-            self.read_char();
-            match self.ch {
+            self.src.next();
+            match self.src.ch() {
                 '"' => break,
-                '\0' => unimplemented!(),
+                '\0' => todo!(),
                 '\\' => {
-                    self.read_char();
-                    match self.ch {
-                        'n' => out.push('\n'),
-                        't' => out.push('\t'),
-                        'r' => out.push('\r'),
-                        '"' => out.push('"'),
-                        '\\' => out.push('\\'),
-                        _ => unimplemented!(),
+                    self.src.next();
+                    match self.src.ch() {
+                        'n' => string.push('\n'),
+                        't' => string.push('\t'),
+                        'r' => string.push('\r'),
+                        '"' => string.push('"'),
+                        '\\' => string.push('\\'),
+                        _ => todo!(),
                     }
                 }
-                c @ _ => out.push(c),
+                c @ _ => string.push(c),
             }
         }
-        out
-    }
-
-    fn peek_char(&self) -> char {
-        if self.read_position >= self.input.len() {
-            '\0'
-        } else {
-            self.input.chars().nth(self.read_position).unwrap()
-        }
+        string
     }
 
     fn skip_whitespace(&mut self) {
-        while matches!(self.ch, ' ' | '\t' | '\n' | '\r') {
-            self.read_char();
+        while let Some(whitespace!()) = self.src.peek_ch() {
+            self.src.next();
         }
     }
+}
 
-    pub fn next_token(&mut self) -> Token {
+impl<'a> Iterator for Lexer<'a> {
+    type Item = Token;
+
+    fn next(&mut self) -> Option<Self::Item> {
         self.skip_whitespace();
 
-        let mut literal = self.ch.to_string();
+        let (start, ch) = self.src.next()?;
 
-        let toktype = match self.ch {
-            '=' => {
-                if self.peek_char() == '=' {
-                    literal = String::from(self.ch);
-                    self.read_char();
-                    literal.push(self.ch);
-                    TokenType::Eq
-                } else {
-                    TokenType::Assign
+        let kind = match ch {
+            '=' => match self.src.peek_ch()? {
+                '=' => {
+                    self.src.next();
+                    TokenKind::Eq
                 }
-            }
-            '+' => TokenType::Plus,
-            '-' => TokenType::Minus,
-            '*' => TokenType::Asterisk,
-            '/' => TokenType::Slash,
-            '!' => {
-                if self.peek_char() == '=' {
-                    literal = String::from(self.ch);
-                    self.read_char();
-                    literal.push(self.ch);
-                    TokenType::NotEq
-                } else {
-                    TokenType::Bang
+                _ => TokenKind::Assign,
+            },
+            '!' => match self.src.peek_ch()? {
+                '=' => {
+                    self.src.next();
+                    TokenKind::NotEq
                 }
-            }
-            ';' => TokenType::Semicolon,
-            ':' => TokenType::Colon,
-            ',' => TokenType::Comma,
-            '<' => TokenType::Lt,
-            '>' => TokenType::Gt,
-            '(' => TokenType::OpenParen,
-            ')' => TokenType::CloseParen,
-            '{' => TokenType::OpenBrace,
-            '}' => TokenType::CloseBrace,
-            '[' => TokenType::OpenBracket,
-            ']' => TokenType::CloseBracket,
-            '"' => {
-                literal = self.read_string();
-                TokenType::String
-            }
-            '\0' => {
-                literal = "".to_string();
-                TokenType::EOF
-            }
-            _ => {
-                if is_letter(&self.ch) {
-                    literal = self.read_identifier();
-                    return Token::new(lookup_ident(&literal), literal);
-                } else if is_digit(&self.ch) {
-                    literal = self.read_number();
-                    return Token::new(TokenType::Int, literal);
-                } else {
-                    TokenType::Illegal
-                }
-            }
+                _ => TokenKind::Bang,
+            },
+            '+' => TokenKind::Plus,
+            '-' => TokenKind::Minus,
+            '*' => TokenKind::Asterisk,
+            '/' => TokenKind::Slash,
+            '<' => TokenKind::Lt,
+            '>' => TokenKind::Gt,
+            '(' => TokenKind::OpenParen,
+            ')' => TokenKind::CloseParen,
+            '[' => TokenKind::OpenBracket,
+            ']' => TokenKind::CloseBracket,
+            '{' => TokenKind::OpenBrace,
+            '}' => TokenKind::CloseBrace,
+            ',' => TokenKind::Comma,
+            ':' => TokenKind::Colon,
+            ';' => TokenKind::Semicolon,
+            '"' => TokenKind::String(self.read_string()),
+            letter!() => lookup_ident(&self.read_identifier()),
+            digit!() => TokenKind::Int(self.read_number().parse().unwrap()),
+            _ => TokenKind::Illegal,
         };
 
-        self.read_char();
-        Token::new(toktype, literal)
+        let end = self.src.pos() + 1;
+        Some(Token::new(kind, start, end))
     }
 }
 
@@ -163,52 +178,26 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_is_letter() {
-        assert!(is_letter(&'a'));
-        assert!(is_letter(&'h'));
-        assert!(is_letter(&'z'));
-        assert!(is_letter(&'A'));
-        assert!(is_letter(&'Q'));
-        assert!(is_letter(&'Z'));
-        assert!(is_letter(&'_'));
-        assert!(!is_letter(&'á'));
-        assert!(!is_letter(&'8'));
-        assert!(!is_letter(&'='));
-    }
-
-    #[test]
-    fn test_is_digit() {
-        assert!(is_digit(&'0'));
-        assert!(is_digit(&'1'));
-        assert!(is_digit(&'6'));
-        assert!(is_digit(&'9'));
-        assert!(!is_digit(&'²'));
-        assert!(!is_digit(&'{'));
-        assert!(!is_digit(&'-'));
-        assert!(!is_digit(&'j'));
-    }
-
-    #[test]
     fn single_char_tokens() {
         let input = "=+(){},;";
 
         let tests = [
-            Token::new(TokenType::Assign, "=".to_string()),
-            Token::new(TokenType::Plus, "+".to_string()),
-            Token::new(TokenType::OpenParen, "(".to_string()),
-            Token::new(TokenType::CloseParen, ")".to_string()),
-            Token::new(TokenType::OpenBrace, "{".to_string()),
-            Token::new(TokenType::CloseBrace, "}".to_string()),
-            Token::new(TokenType::Comma, ",".to_string()),
-            Token::new(TokenType::Semicolon, ";".to_string()),
+            Token::new(TokenKind::Assign, 0, 1),
+            Token::new(TokenKind::Plus, 1, 2),
+            Token::new(TokenKind::OpenParen, 2, 3),
+            Token::new(TokenKind::CloseParen, 3, 4),
+            Token::new(TokenKind::OpenBrace, 4, 5),
+            Token::new(TokenKind::CloseBrace, 5, 6),
+            Token::new(TokenKind::Comma, 6, 7),
+            Token::new(TokenKind::Semicolon, 7, 8),
         ];
 
-        let mut l = Lexer::new(input.to_string());
+        let mut lexer = Lexer::new(input);
 
         for expected in tests {
-            let tok = l.next_token();
-            assert_eq!(tok.toktype, expected.toktype);
-            assert_eq!(tok.literal, expected.literal);
+            let token = lexer.next().unwrap();
+            assert_eq!(token.kind, expected.kind);
+            assert_eq!(token.range, expected.range);
         }
     }
 
@@ -224,58 +213,56 @@ let add = fn(x, y) {
 let result = add(five, ten);
 ";
         let tests = [
-            Token::new(TokenType::Let, "let".to_string()),
-            Token::new(TokenType::Ident, "five".to_string()),
-            Token::new(TokenType::Assign, "=".to_string()),
-            Token::new(TokenType::Int, "5".to_string()),
-            Token::new(TokenType::Semicolon, ";".to_string()),
-            Token::new(TokenType::Let, "let".to_string()),
-            Token::new(TokenType::Ident, "ten".to_string()),
-            Token::new(TokenType::Assign, "=".to_string()),
-            Token::new(TokenType::Int, "10".to_string()),
-            Token::new(TokenType::Semicolon, ";".to_string()),
-            Token::new(TokenType::Let, "let".to_string()),
-            Token::new(TokenType::Ident, "add".to_string()),
-            Token::new(TokenType::Assign, "=".to_string()),
-            Token::new(TokenType::Function, "fn".to_string()),
-            Token::new(TokenType::OpenParen, "(".to_string()),
-            Token::new(TokenType::Ident, "x".to_string()),
-            Token::new(TokenType::Comma, ",".to_string()),
-            Token::new(TokenType::Ident, "y".to_string()),
-            Token::new(TokenType::CloseParen, ")".to_string()),
-            Token::new(TokenType::OpenBrace, "{".to_string()),
-            Token::new(TokenType::Ident, "x".to_string()),
-            Token::new(TokenType::Plus, "+".to_string()),
-            Token::new(TokenType::Ident, "y".to_string()),
-            Token::new(TokenType::Semicolon, ";".to_string()),
-            Token::new(TokenType::CloseBrace, "}".to_string()),
-            Token::new(TokenType::Semicolon, ";".to_string()),
-            Token::new(TokenType::Let, "let".to_string()),
-            Token::new(TokenType::Ident, "result".to_string()),
-            Token::new(TokenType::Assign, "=".to_string()),
-            Token::new(TokenType::Ident, "add".to_string()),
-            Token::new(TokenType::OpenParen, "(".to_string()),
-            Token::new(TokenType::Ident, "five".to_string()),
-            Token::new(TokenType::Comma, ",".to_string()),
-            Token::new(TokenType::Ident, "ten".to_string()),
-            Token::new(TokenType::CloseParen, ")".to_string()),
-            Token::new(TokenType::Semicolon, ";".to_string()),
-            Token::new(TokenType::EOF, "".to_string()),
+            Token::new(TokenKind::Let, 0, 3),
+            Token::new(TokenKind::Ident("five".to_string()), 4, 8),
+            Token::new(TokenKind::Assign, 9, 10),
+            Token::new(TokenKind::Int(5), 11, 12),
+            Token::new(TokenKind::Semicolon, 12, 13),
+            Token::new(TokenKind::Let, 14, 17),
+            Token::new(TokenKind::Ident("ten".to_string()), 18, 21),
+            Token::new(TokenKind::Assign, 22, 23),
+            Token::new(TokenKind::Int(10), 24, 26),
+            Token::new(TokenKind::Semicolon, 26, 27),
+            Token::new(TokenKind::Let, 29, 32),
+            Token::new(TokenKind::Ident("add".to_string()), 33, 36),
+            Token::new(TokenKind::Assign, 37, 38),
+            Token::new(TokenKind::Function, 39, 41),
+            Token::new(TokenKind::OpenParen, 41, 42),
+            Token::new(TokenKind::Ident("x".to_string()), 42, 43),
+            Token::new(TokenKind::Comma, 43, 44),
+            Token::new(TokenKind::Ident("y".to_string()), 45, 46),
+            Token::new(TokenKind::CloseParen, 46, 47),
+            Token::new(TokenKind::OpenBrace, 48, 49),
+            Token::new(TokenKind::Ident("x".to_string()), 54, 55),
+            Token::new(TokenKind::Plus, 56, 57),
+            Token::new(TokenKind::Ident("y".to_string()), 58, 59),
+            Token::new(TokenKind::Semicolon, 59, 60),
+            Token::new(TokenKind::CloseBrace, 61, 62),
+            Token::new(TokenKind::Semicolon, 62, 63),
+            Token::new(TokenKind::Let, 65, 68),
+            Token::new(TokenKind::Ident("result".to_string()), 69, 75),
+            Token::new(TokenKind::Assign, 76, 77),
+            Token::new(TokenKind::Ident("add".to_string()), 78, 81),
+            Token::new(TokenKind::OpenParen, 81, 82),
+            Token::new(TokenKind::Ident("five".to_string()), 82, 86),
+            Token::new(TokenKind::Comma, 86, 87),
+            Token::new(TokenKind::Ident("ten".to_string()), 88, 91),
+            Token::new(TokenKind::CloseParen, 91, 92),
+            Token::new(TokenKind::Semicolon, 92, 93),
         ];
 
-        let mut l = Lexer::new(input.to_string());
+        let mut lexer = Lexer::new(input);
 
         for expected in tests {
-            let tok = l.next_token();
-            assert_eq!(tok.toktype, expected.toktype);
-            assert_eq!(tok.literal, expected.literal);
-            println!("{}", tok.literal);
+            let token = lexer.next().unwrap();
+            assert_eq!(token.kind, expected.kind);
+            assert_eq!(token.range, expected.range);
         }
     }
 
-    #[test]
-    fn more_tokens() {
-        let input = r#"!-/*5;
+        #[test]
+        fn more_tokens() {
+            let input = r#"!-/*5;
 5 < 10 > 5;
 
 if (5 < 10) {
@@ -285,123 +272,117 @@ if (5 < 10) {
 }
 [1, 2];
 {"foo": "bar"}"#;
-        let tests = [
-            Token::new(TokenType::Bang, "!".to_string()),
-            Token::new(TokenType::Minus, "-".to_string()),
-            Token::new(TokenType::Slash, "/".to_string()),
-            Token::new(TokenType::Asterisk, "*".to_string()),
-            Token::new(TokenType::Int, "5".to_string()),
-            Token::new(TokenType::Semicolon, ";".to_string()),
-            Token::new(TokenType::Int, "5".to_string()),
-            Token::new(TokenType::Lt, "<".to_string()),
-            Token::new(TokenType::Int, "10".to_string()),
-            Token::new(TokenType::Gt, ">".to_string()),
-            Token::new(TokenType::Int, "5".to_string()),
-            Token::new(TokenType::Semicolon, ";".to_string()),
-            Token::new(TokenType::If, "if".to_string()),
-            Token::new(TokenType::OpenParen, "(".to_string()),
-            Token::new(TokenType::Int, "5".to_string()),
-            Token::new(TokenType::Lt, "<".to_string()),
-            Token::new(TokenType::Int, "10".to_string()),
-            Token::new(TokenType::CloseParen, ")".to_string()),
-            Token::new(TokenType::OpenBrace, "{".to_string()),
-            Token::new(TokenType::Return, "return".to_string()),
-            Token::new(TokenType::True, "true".to_string()),
-            Token::new(TokenType::Semicolon, ";".to_string()),
-            Token::new(TokenType::CloseBrace, "}".to_string()),
-            Token::new(TokenType::Else, "else".to_string()),
-            Token::new(TokenType::OpenBrace, "{".to_string()),
-            Token::new(TokenType::Return, "return".to_string()),
-            Token::new(TokenType::False, "false".to_string()),
-            Token::new(TokenType::Semicolon, ";".to_string()),
-            Token::new(TokenType::CloseBrace, "}".to_string()),
-            Token::new(TokenType::OpenBracket, "[".to_string()),
-            Token::new(TokenType::Int, "1".to_string()),
-            Token::new(TokenType::Comma, ",".to_string()),
-            Token::new(TokenType::Int, "2".to_string()),
-            Token::new(TokenType::CloseBracket, "]".to_string()),
-            Token::new(TokenType::Semicolon, ";".to_string()),
-            Token::new(TokenType::OpenBrace, "{".to_string()),
-            Token::new(TokenType::String, "foo".to_string()),
-            Token::new(TokenType::Colon, ":".to_string()),
-            Token::new(TokenType::String, "bar".to_string()),
-            Token::new(TokenType::CloseBrace, "}".to_string()),
-        ];
+            let tests = [
+                Token::new(TokenKind::Bang, 0, 1),
+                Token::new(TokenKind::Minus, 1, 2),
+                Token::new(TokenKind::Slash, 2, 3),
+                Token::new(TokenKind::Asterisk, 3, 4),
+                Token::new(TokenKind::Int(5), 4, 5),
+                Token::new(TokenKind::Semicolon, 5, 6),
+                Token::new(TokenKind::Int(5), 7, 8),
+                Token::new(TokenKind::Lt, 9, 10),
+                Token::new(TokenKind::Int(10), 11, 13),
+                Token::new(TokenKind::Gt, 14, 15),
+                Token::new(TokenKind::Int(5), 16, 17),
+                Token::new(TokenKind::Semicolon, 17, 18),
+                Token::new(TokenKind::If, 20, 22),
+                Token::new(TokenKind::OpenParen, 23, 24),
+                Token::new(TokenKind::Int(5), 24, 25),
+                Token::new(TokenKind::Lt, 26, 27),
+                Token::new(TokenKind::Int(10), 28, 30),
+                Token::new(TokenKind::CloseParen, 30, 31),
+                Token::new(TokenKind::OpenBrace, 32, 33),
+                Token::new(TokenKind::Return, 38, 44),
+                Token::new(TokenKind::True, 45, 49),
+                Token::new(TokenKind::Semicolon, 49, 50),
+                Token::new(TokenKind::CloseBrace, 51, 52),
+                Token::new(TokenKind::Else, 53, 57),
+                Token::new(TokenKind::OpenBrace, 58, 59),
+                Token::new(TokenKind::Return, 64, 70),
+                Token::new(TokenKind::False, 71, 76),
+                Token::new(TokenKind::Semicolon, 76, 77),
+                Token::new(TokenKind::CloseBrace, 78, 79),
+                Token::new(TokenKind::OpenBracket, 80, 81),
+                Token::new(TokenKind::Int(1), 81, 82),
+                Token::new(TokenKind::Comma, 82, 83),
+                Token::new(TokenKind::Int(2), 84, 85),
+                Token::new(TokenKind::CloseBracket, 85, 86),
+                Token::new(TokenKind::Semicolon, 86, 87),
+                Token::new(TokenKind::OpenBrace, 88, 89),
+                Token::new(TokenKind::String(String::from("foo")), 89, 94),
+                Token::new(TokenKind::Colon, 94, 95),
+                Token::new(TokenKind::String(String::from("bar")), 96, 101),
+                Token::new(TokenKind::CloseBrace, 101, 102),
+            ];
 
-        let mut l = Lexer::new(input.to_string());
+            let mut lexer = Lexer::new(input);
 
-        for expected in tests {
-            let tok = l.next_token();
-            assert_eq!(tok.toktype, expected.toktype);
-            assert_eq!(tok.literal, expected.literal);
-            println!("{}", tok.literal);
+            for expected in tests {
+                let token = lexer.next().unwrap();
+                assert_eq!(token.kind, expected.kind);
+                assert_eq!(token.range, expected.range);
+            }
         }
-    }
 
-    #[test]
-    fn double_char_tokens() {
-        let input = "10 == 10;\n10 != 9;";
-        let tests = [
-            Token::new(TokenType::Int, "10".to_string()),
-            Token::new(TokenType::Eq, "==".to_string()),
-            Token::new(TokenType::Int, "10".to_string()),
-            Token::new(TokenType::Semicolon, ";".to_string()),
-            Token::new(TokenType::Int, "10".to_string()),
-            Token::new(TokenType::NotEq, "!=".to_string()),
-            Token::new(TokenType::Int, "9".to_string()),
-            Token::new(TokenType::Semicolon, ";".to_string()),
-        ];
+        #[test]
+        fn double_char_tokens() {
+            let input = "10 == 10;\n10 != 9;";
+            let tests = [
+                Token::new(TokenKind::Int(10), 0, 2),
+                Token::new(TokenKind::Eq, 3, 5),
+                Token::new(TokenKind::Int(10), 6, 8),
+                Token::new(TokenKind::Semicolon, 8, 9),
+                Token::new(TokenKind::Int(10), 10, 12),
+                Token::new(TokenKind::NotEq, 13, 15),
+                Token::new(TokenKind::Int(9), 16, 17),
+                Token::new(TokenKind::Semicolon, 17, 18),
+            ];
 
-        let mut l = Lexer::new(input.to_string());
+            let mut lexer = Lexer::new(input);
 
-        for expected in tests {
-            let tok = l.next_token();
-            assert_eq!(tok.toktype, expected.toktype);
-            assert_eq!(tok.literal, expected.literal);
-            println!("{}", tok.literal);
+            for expected in tests {
+                let token = lexer.next().unwrap();
+                assert_eq!(token.kind, expected.kind);
+                assert_eq!(token.range, expected.range);
+            }
         }
-    }
 
-    #[test]
-    fn string_tokens() {
-        let input = String::from(r#""foobar" "foo bar""#);
+        #[test]
+        fn string_tokens() {
+            let input = r#""foobar" "foo bar""#;
 
-        let tests = [
-            Token::new(TokenType::String, "foobar".to_string()),
-            Token::new(TokenType::String, "foo bar".to_string()),
-        ];
+            let tests = [
+                Token::new(TokenKind::String(String::from("foobar")), 0, 8),
+                Token::new(TokenKind::String(String::from("foo bar")), 9, 18),
+            ];
 
-        let mut lexer = Lexer::new(input);
+            let mut lexer = Lexer::new(input);
 
-        for expected in tests {
-            let tok = lexer.next_token();
-            assert_eq!(tok, expected);
+            for expected in tests {
+                let token = lexer.next().unwrap();
+                assert_eq!(token, expected);
+            }
         }
-    }
 
-    #[test]
-    fn string_escapes() {
-        let input = String::from(
-            r#"
-            "foo\nbar"
-            "\t\tfoo"
-            "foo \"bar\" foo"
-            "foo\\bar"
-        "#,
-        );
+        #[test]
+        fn string_escapes() {
+            let input = r#""foo\nbar"
+"\t\tfoo"
+"foo \"bar\" foo"
+"foo\\bar""#;
 
-        let tests = [
-            Token::new(TokenType::String, "foo\nbar".to_string()),
-            Token::new(TokenType::String, "\t\tfoo".to_string()),
-            Token::new(TokenType::String, "foo \"bar\" foo".to_string()),
-            Token::new(TokenType::String, "foo\\bar".to_string()),
-        ];
+            let tests = [
+                Token::new(TokenKind::String(String::from("foo\nbar")), 0, 10),
+                Token::new(TokenKind::String(String::from("\t\tfoo")), 11, 20),
+                Token::new(TokenKind::String(String::from("foo \"bar\" foo")), 21, 38),
+                Token::new(TokenKind::String(String::from("foo\\bar")), 39, 49),
+            ];
 
-        let mut lexer = Lexer::new(input);
+            let mut lexer = Lexer::new(input);
 
-        for expected in tests {
-            let tok = lexer.next_token();
-            assert_eq!(tok, expected);
+            for expected in tests {
+                let token = lexer.next().unwrap();
+                assert_eq!(token, expected);
+            }
         }
-    }
 }
