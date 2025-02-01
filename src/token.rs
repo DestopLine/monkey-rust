@@ -1,8 +1,9 @@
+#[derive(Debug, PartialEq, Clone)]
 pub enum Token {
     Illegal,
     Eof,
-    Ident,
-    Int,
+    Ident(String),
+    Int(i64),
     Assign,
     Plus,
     Comma,
@@ -13,4 +14,14 @@ pub enum Token {
     RightBrace,
     Function,
     Let,
+}
+
+impl Token {
+    pub fn from_ident(ident: String) -> Self {
+        match ident.as_str() {
+            "fn" => Self::Function,
+            "let" => Self::Let,
+            _ => Self::Ident(ident),
+        }
+    }
 }
