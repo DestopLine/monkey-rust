@@ -39,12 +39,32 @@ impl<'a> Lexer<'a> {
         let token = match self.source.current {
             None => Token::Eof,
             Some(c) => match c {
-                '=' => Token::Assign,
+                '=' => {
+                    if let Some('=') = self.source.peek() {
+                        self.source.read_char();
+                        Token::Equals
+                    } else {
+                        Token::Assign
+                    }
+                }
+                '+' => Token::Plus,
+                '-' => Token::Minus,
+                '!' => {
+                    if let Some('=') = self.source.peek() {
+                        self.source.read_char();
+                        Token::NotEquals
+                    } else {
+                        Token::Bang
+                    }
+                }
+                '/' => Token::Slash,
+                '*' => Token::Asterisk,
+                '<' => Token::LessThan,
+                '>' => Token::GreaterThan,
                 ';' => Token::Semicolon,
                 '(' => Token::LeftParen,
                 ')' => Token::RightParen,
                 ',' => Token::Comma,
-                '+' => Token::Plus,
                 '{' => Token::LeftBrace,
                 '}' => Token::RightBrace,
                 letter_pat!() => return Token::from_ident(self.read_identifier()),
@@ -127,6 +147,17 @@ mod tests {
             };
 
             let result = add(five, ten);
+            !-/*5;
+            5 < 10 > 5;
+
+            if (5 < 10) {
+                return true;
+            } else {
+                return false;
+            }
+
+            10 == 10;
+            10 != 9;
         ";
 
         let tests = [
@@ -165,6 +196,43 @@ mod tests {
             Token::Comma,
             Token::Ident("ten".to_string()),
             Token::RightParen,
+            Token::Semicolon,
+            Token::Bang,
+            Token::Minus,
+            Token::Slash,
+            Token::Asterisk,
+            Token::Int(5),
+            Token::Semicolon,
+            Token::Int(5),
+            Token::LessThan,
+            Token::Int(10),
+            Token::GreaterThan,
+            Token::Int(5),
+            Token::Semicolon,
+            Token::If,
+            Token::LeftParen,
+            Token::Int(5),
+            Token::LessThan,
+            Token::Int(10),
+            Token::RightParen,
+            Token::LeftBrace,
+            Token::Return,
+            Token::True,
+            Token::Semicolon,
+            Token::RightBrace,
+            Token::Else,
+            Token::LeftBrace,
+            Token::Return,
+            Token::False,
+            Token::Semicolon,
+            Token::RightBrace,
+            Token::Int(10),
+            Token::Equals,
+            Token::Int(10),
+            Token::Semicolon,
+            Token::Int(10),
+            Token::NotEquals,
+            Token::Int(9),
             Token::Semicolon,
             Token::Eof,
         ];
