@@ -104,8 +104,18 @@ impl<'a> Lexer<'a> {
     }
 }
 
+impl<'a> Iterator for Lexer<'a> {
+    type Item = Token;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self.next_token() {
+            Token::Eof => None,
+            tok @ _ => Some(tok),
+        }
+    }
+}
+
 struct Source<'a> {
-    input: &'a str,
     chars: Peekable<Chars<'a>>,
     current: Option<char>,
 }
@@ -113,14 +123,9 @@ struct Source<'a> {
 impl<'a> Source<'a> {
     pub fn new(input: &'a str) -> Self {
         Self {
-            input,
             chars: input.chars().peekable(),
             current: None,
         }
-    }
-
-    pub fn current(&self) -> Option<char> {
-        self.current
     }
 
     pub fn peek(&mut self) -> Option<char> {
